@@ -32,6 +32,7 @@ function getDemoEntries(dir: string) {
 const entries = getDemoEntries("src");
 
 export default defineConfig(({ command }) => ({
+  base: './',
   build: {
     rollupOptions: {
       input: {
