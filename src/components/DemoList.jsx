@@ -14,7 +14,7 @@ const Content = (props) => {
                     const frame = document.getElementById('demo-frame');
                     frame.setAttribute('src', d.url);
                 }}>
-                    <Box className='DemoOptionDescribe'>{d.name}: {d.description}</Box>
+                    <Box className='DemoOptionDescribe'>{d.name}</Box>
                 </Box>
             ))}
         </>

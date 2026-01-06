@@ -31,28 +31,16 @@ function getDemoEntries(dir: string) {
 
 const entries = getDemoEntries("src");
 
-console.log(entries);
-
 export default defineConfig(({ command }) => ({
-  base: './',
-  assetsInclude: ['**/*.html'],
-  build:
-    command === 'build'
-      ? {
-        rollupOptions: {
-          input: {
-            main: resolve(__dirname, 'index.html'),
-            ...entries
-          },
-        },
-      }
-      : undefined,
-  plugins: [
-    Inspect(),
-    react({
-      babel: {
-        plugins: [['babel-plugin-react-compiler']],
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        ...entries
       },
-    }),
+    },
+  },
+  plugins: [
+    react(),
   ],
 }))

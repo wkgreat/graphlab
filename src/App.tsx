@@ -7,7 +7,6 @@ import { GRAPHLAB_DEMOS } from "./demo";
 export default function App() {
 
   return <Theme appearance="dark" radius="none">
-
     <Grid columns="20% 80%" height="100vh" className="ClsGrid">
       <Box className="ClsGridColumn">
         <DemoList></DemoList>
