@@ -1,0 +1,13 @@
+#demo-frame {
+    box-sizing: border-box;
+    height: 100%;
+    width: 100%;
+    border-width: 1px;
+    border-color: rgb(180, 19, 19);
+}
+
+.ClsGrid {}
+
+.ClsGridColumn {
+    height: 100vh;
+}
