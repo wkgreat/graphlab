@@ -8,21 +8,23 @@ const Content = (props) => {
     const demos = props.demos;
 
     return (
-        <>
+        <Box className='DemoListBox'>
             {demos.map((d) => (
                 <Box className="DemoOption" key={d.name} onClick={() => {
                     const frame = document.getElementById('demo-frame');
                     frame.setAttribute('src', d.url);
                 }}>
-                    <Box className='DemoOptionDescribe'>{d.name}</Box>
+                    <Box className='DemoOptionName'>{d.name}</Box>
+                    <Box className='DemoOptionDescription'>{d.description}</Box>
                 </Box>
             ))}
-        </>
+        </Box>
     );
 };
 
 export const DemoList = () => {
 
+    // const demos = GRAPHLAB_DEMOS;
     const demos = GRAPHLAB_DEMOS;
 
     return (

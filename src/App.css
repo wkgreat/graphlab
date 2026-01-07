@@ -1,13 +1,24 @@
+@import "@radix-ui/colors/grass.css";
+
 #demo-frame {
     box-sizing: border-box;
     height: 100%;
     width: 100%;
-    border-width: 1px;
-    border-color: rgb(180, 19, 19);
+    border-width: 2px;
+    border-color: var(--grass-10);
 }
 
 .ClsGrid {}
 
 .ClsGridColumn {
     height: 100vh;
+}
+
+.ClsTitle {
+    height: 5%;
+    padding: 5px;
+    border-bottom: 2px solid var(--grass-6);
+    font-size: 20px;
+    font-weight: 1000;
+    color: var(--grass-10);
 }
