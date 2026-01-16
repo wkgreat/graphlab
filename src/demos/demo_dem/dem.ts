@@ -2,9 +2,9 @@ import { GeoTIFFImage } from "geotiff";
 import { mat4, vec4 } from "gl-matrix";
 import { Pane } from "tweakpane";
 import { makeShaderDataDefinitions, makeStructuredView, type ShaderDataDefinitions } from "webgpu-utils";
-import Camera, { CameraMouseControl } from "./camera";
 import { createGeoTiffTexture } from "./texture";
 import { type CanvasGPUInfo, type GPUInfo, type Mesh } from "./webgpuUtils";
+import Camera, { CameraMouseControl } from "../../commons/camera";
 
 async function createDemRegularMesh(dem: GeoTIFFImage, options: { level: number } = { level: 4 }): Promise<Mesh> {
 
@@ -377,7 +377,7 @@ export async function visualizeDEM(gpuinfo: GPUInfo, canvasInfo: CanvasGPUInfo, 
 
     function render() {
 
-        const viewmtx = camera.getViewMatrix();
+        const viewmtx = camera.viewMtx;
         const projmtx = mat4.perspective(mat4.create(), Math.PI / 2, canvasInfo.canvas.width / canvasInfo.canvas.height, 0.1, 10000);
         sceneUniformView.set({
             camera: {

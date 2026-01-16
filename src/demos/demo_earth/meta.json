@@ -1,0 +1,7 @@
+{
+    "external": true,
+    "url": "https://wkgreat.github.io/tinyearth/",
+    "html": "",
+    "name": "三维地球模型",
+    "description": "基于WebGL实现的三维地形模型, 类似于Cesium库"
+}

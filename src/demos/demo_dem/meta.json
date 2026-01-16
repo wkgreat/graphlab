@@ -1,4 +1,6 @@
 {
+    "external": false,
+    "url": "",
     "html": "index.html",
     "name": "地形分析",
     "description": "使用WebGPU计算数字高程模型(DEM)的相关地形因子，如坡度，坡向；并可视化"

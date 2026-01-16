@@ -11,20 +11,23 @@ export function getAllDemos(): DemoInfo[] {
     const demos = Object.keys(modules).map(path => {
 
         const meta = modules[path] as object;
-
-        const category = "";
-        let pathlst = path.split("/");
-        pathlst = pathlst.slice(1, pathlst.length);
-        pathlst[pathlst.length - 1] = meta["html"];
-        const url = pathlst.join("/");
-        const description = meta["description"];
-
         const name = meta["name"];
+        const category = "";
+        let url = "";
+        if (meta["external"]) {
+            url = meta["url"];
+        } else {
+            let pathlst = path.split("/");
+            pathlst = pathlst.slice(1, pathlst.length);
+            pathlst[pathlst.length - 1] = meta["html"];
+            url = `src/${pathlst.join("/")}`;
+        }
+        const description = meta["description"];
 
         return {
             name,
             category,
-            url: `src/${url}`,
+            url: url,
             description
         };
     })

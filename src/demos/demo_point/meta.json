@@ -1,0 +1,7 @@
+{
+    "external": false,
+    "url": "",
+    "html": "index.html",
+    "name": "点绘制",
+    "description": "使用WebGPU绘制点"
+}

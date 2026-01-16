@@ -1,0 +1,7 @@
+{
+    "external": false,
+    "url": "",
+    "html": "index.html",
+    "name": "Mesh属性计算",
+    "description": "计算Mesh微分几何中常用属性(如法向、曲率等)并可视化"
+}

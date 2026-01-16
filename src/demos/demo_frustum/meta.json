@@ -1,0 +1,7 @@
+{
+    "external": false,
+    "url": "",
+    "html": "index.html",
+    "name": "视锥体可视化及分析",
+    "description": "使用WebGPU视锥体可视化并进行相关分析"
+}

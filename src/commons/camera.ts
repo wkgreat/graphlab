@@ -5,8 +5,8 @@ class Camera {
     from = vec4.fromValues(1, 1, 1, 1);
     to = vec4.fromValues(0, 0, 0, 1);
     up = vec4.fromValues(0, 1, 0, 0);
-    viewMtx = mat4.create();
-    invViewMtx = mat4.create();
+    #viewMtx = mat4.create();
+    #invViewMtx = mat4.create();
 
     constructor(from: vec4, to: vec4, up: vec4) {
         this.setFrom(from);
@@ -40,25 +40,25 @@ class Camera {
     }
 
     _look() {
-        mat4.lookAt(this.viewMtx, this._vec3(this.from), this._vec3(this.to), this._vec3(this.up));
-        mat4.invert(this.invViewMtx, this.viewMtx);
+        mat4.lookAt(this.#viewMtx, this._vec3(this.from), this._vec3(this.to), this._vec3(this.up));
+        mat4.invert(this.#invViewMtx, this.#viewMtx);
     }
 
     getFrom(): vec4 {
         return this.from;
     }
 
-    getMatrix() {
+    get matrices() {
         this._look();
         return {
-            viewMtx: this.viewMtx,
-            invViewMtx: this.invViewMtx
+            viewMtx: this.#viewMtx,
+            invViewMtx: this.#invViewMtx
         };
     }
 
-    getViewMatrix() {
+    get viewMtx() {
         this._look();
-        return this.viewMtx;
+        return this.#viewMtx;
     }
 
     getRelViewMatrix() {
@@ -78,8 +78,8 @@ class Camera {
      * @returns {void}
     */
     round(dx: number, dy: number) {
-        const viewFrom4 = vec4.transformMat4(vec4.create(), this.from, this.viewMtx);
-        const viewTo4 = vec4.transformMat4(vec4.create(), this.to, this.viewMtx);
+        const viewFrom4 = vec4.transformMat4(vec4.create(), this.from, this.#viewMtx);
+        const viewTo4 = vec4.transformMat4(vec4.create(), this.to, this.#viewMtx);
         const viewFrom3 = this._vec3(viewFrom4);
         const viewTo3 = this._vec3(viewTo4);
 
@@ -87,7 +87,7 @@ class Camera {
         vec3.rotateX(viewFrom3, viewFrom3, viewTo3, dy); // 绕x轴旋转dy
 
         vec4.set(viewFrom4, viewFrom3[0], viewFrom3[1], viewFrom3[2], 1);
-        vec4.transformMat4(this.from, viewFrom4, this.invViewMtx);
+        vec4.transformMat4(this.from, viewFrom4, this.#invViewMtx);
 
         this._look();
     }
@@ -111,16 +111,16 @@ class Camera {
     */
     move(dx: number, dy: number) {
 
-        const viewFrom4 = vec4.transformMat4(vec4.create(), this.from, this.viewMtx);
-        const viewTo4 = vec4.transformMat4(vec4.create(), this.to, this.viewMtx);
+        const viewFrom4 = vec4.transformMat4(vec4.create(), this.from, this.#viewMtx);
+        const viewTo4 = vec4.transformMat4(vec4.create(), this.to, this.#viewMtx);
 
         const mtx = mat4.create();
         mat4.translate(mtx, mtx, [dx, dy, 0]);
         vec4.transformMat4(viewFrom4, viewFrom4, mtx);
         vec4.transformMat4(viewTo4, viewTo4, mtx);
 
-        vec4.transformMat4(this.from, viewFrom4, this.invViewMtx);
-        vec4.transformMat4(this.to, viewTo4, this.invViewMtx);
+        vec4.transformMat4(this.from, viewFrom4, this.#invViewMtx);
+        vec4.transformMat4(this.to, viewTo4, this.#invViewMtx);
 
         this._look();
 
