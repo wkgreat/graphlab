@@ -1,0 +1,1 @@
+body{font-family:Arial,sans-serif;margin:0;padding:0}#describe-div{position:fixed;top:5px;left:5px;background-color:#2d3748;color:#fff;padding:8px 16px;border-radius:6px;font-size:13px;font-family:sans-serif;white-space:nowrap}#demo-div{height:100%;width:100%;display:flex;justify-content:center;align-items:center;gap:10px}.demo-webgpu-canvas{height:100%;width:100%}
