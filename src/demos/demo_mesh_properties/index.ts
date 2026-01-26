@@ -53,7 +53,7 @@ class MeshDemo {
 
     paneParams = {
         wireframe: true,
-        meshurl: bunnyRes4URL,
+        meshurl: bunnyURL,
         selectMode: MeshSelectMode.VERTEX,
         nring: 1
     }
@@ -348,6 +348,16 @@ class MeshDemo {
         }).on("change", (e) => {
             for (const mesh of this.meshes) {
                 mesh.selectVertexNRing = e.value;
+            }
+        });
+
+        this.pane.addButton({
+            title: "生成法向量"
+        }).on("click", () => {
+            for (const mesh of this.meshes) {
+                if (mesh.halfedge) {
+                    mesh.halfedge.computeNormals();
+                }
             }
         });
     }

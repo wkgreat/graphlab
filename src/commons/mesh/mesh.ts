@@ -8,6 +8,7 @@ import type Scene from '../scene';
 import type { NumArr4 } from '../defines';
 import { createSphere, Triangle, type Ray } from '../objects';
 import { BlinnPhongMaterial } from '../material';
+import { vec4t3 } from '../matrix';
 
 export type MeshColorMode = 'vertex' | 'face' | 'mesh'
 
@@ -79,13 +80,13 @@ export class Mesh {
         this.modelmtx = mat4.create();
 
         this.#material = new BlinnPhongMaterial({
-            ka: 0.1,
+            ka: 0.2,
             ambient: [1, 1, 1, 1],
-            kd: 0.8,
+            kd: 0.4,
             diffuse: [1, 1, 1, 1],
-            ks: 0.1,
+            ks: 0.2,
             specular: [1, 1, 1, 1],
-            phong: 2
+            phong: 1.5
         });
     }
 
@@ -111,7 +112,7 @@ export class Mesh {
 
     createDefaultWireframeColors() {
         const vertexCount = this.positions.length / 3;
-        const color = [1, 0, 0, 1];
+        const color = [0, 0, 0, 0.1];
         this.wireframeColors = new Float32Array(Array(vertexCount).fill(color).flat());
     }
 
@@ -261,10 +262,10 @@ export class Mesh {
         }
     }
 
-    refreshVertexBuffers() {
+    refreshVertexBuffers(force: boolean = false) {
 
-        this.refreshDefaultVertexBuffer();
-        this.refreshWireframeVertexBuffer();
+        this.refreshDefaultVertexBuffer(force);
+        this.refreshWireframeVertexBuffer(force);
     }
 
     refreshUniforms(camera: Camera, projection: Projection) {
@@ -547,10 +548,6 @@ export class HalfEdgeInfo {
             const oppEdgeRef1: HalfEdgeRef = `${vertex2}-${vertex1}`;
             const oppEdgeRef2: HalfEdgeRef = `${vertex0}-${vertex2}`;
 
-            // if (faceRef === 529) {
-            //     debugger;
-            // }
-
 
             if (this.halfedgeMap.has(edgeRef0) || this.halfedgeMap.has(edgeRef1) || this.halfedgeMap.has(edgeRef2)) {
                 console.warn("HalfEdge 边有重叠");
@@ -819,7 +816,12 @@ export class HalfEdgeInfo {
                 console.log("HE: opposite is null");
                 break;
             }
-            const nextHeRef = this.halfedgeMap.get(he.opposite).next;
+            const opp = this.halfedgeMap.get(he.opposite);
+            if (!opp) {
+                console.log("getVertexOneRing, opp is null!");
+                break;
+            }
+            const nextHeRef = opp.next;
             he = this.halfedgeMap.get(nextHeRef);
             if (nextHeRef === startHeRef) {
                 break;
@@ -828,6 +830,51 @@ export class HalfEdgeInfo {
 
         return faces;
 
+    }
+
+    computeFaceNormal(face: HalfEdgeFace) {
+        const vertex0 = this.vertexList[face.vertices[0]];
+        const vertex1 = this.vertexList[face.vertices[1]];
+        const vertex2 = this.vertexList[face.vertices[2]];
+        const position0 = this.mesh.positions.slice(vertex0.position, vertex0.position + 3);
+        const position1 = this.mesh.positions.slice(vertex1.position, vertex1.position + 3);
+        const position2 = this.mesh.positions.slice(vertex2.position, vertex2.position + 3);
+        const v0 = vec4.fromValues(position0[0], position0[1], position0[2], 1.0);
+        const v1 = vec4.fromValues(position1[0], position1[1], position1[2], 1.0);
+        const v2 = vec4.fromValues(position2[0], position2[1], position2[2], 1.0);
+        vec4.transformMat4(v0, v0, this.mesh.modelmtx);
+        vec4.transformMat4(v1, v1, this.mesh.modelmtx);
+        vec4.transformMat4(v2, v2, this.mesh.modelmtx);
+
+        const e0 = vec3.sub(vec3.create(), v1, v0);
+        const e1 = vec3.sub(vec3.create(), v2, v0);
+        const n = vec3.cross(vec3.create(), vec4t3(e0), vec4t3(e1));
+        vec3.scale(n, n, -1);
+        vec3.normalize(n, n);
+        return n;
+    }
+
+    computeNormals() {
+        const normalData = new Float32Array(this.mesh.vertexCount * 3);
+        for (const vertex of this.vertexList) {
+            const faces = this.getVertexOneRing(vertex);
+            const faceNormals = [];
+            for (const face of faces) {
+                faceNormals.push(this.computeFaceNormal(face));
+            }
+            const normal = vec3.fromValues(0, 0, 0);
+            for (const n of faceNormals) {
+                vec3.add(normal, normal, n);
+            }
+            vec3.normalize(normal, normal);
+            normalData[vertex.ref * 3] = normal[0];
+            normalData[vertex.ref * 3 + 1] = normal[1];
+            normalData[vertex.ref * 3 + 2] = normal[2];
+        }
+        this.mesh.normals = normalData;
+        this.mesh.refreshVertexBuffers(true);
+
+        console.log(normalData);
     }
 
 }
