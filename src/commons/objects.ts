@@ -1,11 +1,126 @@
-import { mat4, vec3 } from "gl-matrix";
-import type Camera from "./camera";
-import type Projection from "./projection";
-import type { CanvasGPUInfo, GPUInfo } from "./webgpuUtils";
 import { createBuffersAndAttributesFromArrays, makeShaderDataDefinitions, makeStructuredView, type BuffersAndAttributes, type ShaderDataDefinitions } from "webgpu-utils";
+import type Camera from "./camera";
 import type { NumArr3, NumArr4 } from "./defines";
+import type Projection from "./projection";
 import { createCheckerBoardTexture } from "./texture";
-import { Colors } from "./color";
+import type { CanvasGPUInfo, GPUInfo } from "./webgpuUtils";
+import { vec3 } from "gl-matrix";
+
+interface RayCrossTriangleResult {
+    cross: boolean,
+    point: vec3 | null,
+    distance: number | null;
+    uvt: [number, number, number]
+}
+
+export class Triangle {
+    p0: vec3 = vec3.fromValues(0, 0, 0);
+
+    p1: vec3 = vec3.fromValues(1, 0, 0);
+
+    p2: vec3 = vec3.fromValues(0, 1, 0);
+
+    constructor(p0: vec3, p1: vec3, p2: vec3) {
+        this.p0 = p0;
+        this.p1 = p1;
+        this.p2 = p2;
+    }
+}
+
+export class Ray {
+
+    origin: vec3
+    direct: vec3
+
+    constructor(origin: vec3, direct: vec3) {
+        this.origin = origin;
+        this.direct = vec3.normalize(vec3.create(), direct);
+    }
+
+    crossTriangle(triangle: Triangle): RayCrossTriangleResult {
+
+        const epsilon = 1E-6;
+        const e1 = vec3.sub(vec3.create(), triangle.p1, triangle.p0);
+        const e2 = vec3.sub(vec3.create(), triangle.p2, triangle.p0);
+        const q = vec3.cross(vec3.create(), this.direct, e2);
+        const a = vec3.dot(e1, q);
+        if (Math.abs(a) < epsilon) {
+            return {
+                cross: false,
+                point: null,
+                distance: null,
+                uvt: [0, 0, 0]
+            }
+        }
+        const f = 1 / a;
+        const s = vec3.sub(vec3.create(), this.origin, triangle.p0);
+        const u = f * vec3.dot(s, q);
+        if (u < 0.0) {
+            return {
+                cross: false,
+                point: null,
+                distance: null,
+                uvt: [0, 0, 0]
+            }
+        }
+        const r = vec3.cross(vec3.create(), s, e1);
+        const v = f * vec3.dot(this.direct, r);
+        if (v < 0.0 || u + v > 1.0) {
+            return {
+                cross: false,
+                point: null,
+                distance: null,
+                uvt: [0, 0, 0]
+            }
+        }
+        const t = f * vec3.dot(e2, r);
+
+        const bp0 = vec3.scale(vec3.create(), triangle.p0, u);
+        const bp1 = vec3.scale(vec3.create(), triangle.p1, v);
+        const bp2 = vec3.scale(vec3.create(), triangle.p2, t);
+        const cp = vec3.fromValues(0, 0, 0);
+        vec3.add(cp, cp, bp0);
+        vec3.add(cp, cp, bp1);
+        vec3.add(cp, cp, bp2);
+
+        const seg = vec3.sub(vec3.create(), cp, this.origin);
+        const distance = vec3.length(seg);
+
+        return {
+            cross: true,
+            point: cp,
+            distance: distance,
+            uvt: [u, v, t]
+        }
+    }
+
+    distanceOfPoint(point: vec3): number {
+
+        const A = this.origin;
+        const D = this.direct;
+        const P = point;
+        const AP = vec3.sub(vec3.create(), P, A);
+        const len = vec3.length(AP);
+        const t = vec3.dot(vec3.normalize(vec3.create(), this.direct), vec3.normalize(vec3.create(), AP));
+
+
+        if (t <= 0) {
+            return len;
+        } else {
+            const sin = Math.sin(Math.acos(t));
+            const distance = len * sin;
+            return distance;
+        }
+
+    }
+
+    dwithinPoint(point: vec3, dist: number): boolean {
+        const distance = this.distanceOfPoint(point);
+
+        return distance <= dist;
+    }
+}
+
 
 export class Ground {
 
@@ -187,8 +302,8 @@ export class Ground {
                 topology: 'triangle-list',
             },
             depthStencil: {
-                format: 'depth24plus',
-                depthWriteEnabled: false,
+                format: 'depth32float',
+                depthWriteEnabled: true,
                 depthCompare: 'less-equal'
             }
         });
@@ -354,6 +469,80 @@ export class NDCCubeZO extends NDCCube {
 
     constructor(options: NDCCubeOptions) {
         super(options);
+    }
+
+}
+
+function pointTranslate(p: number[], dx: number, dy: number, dz: number): NumArr3 {
+    return [p[0] + dx, p[1] + dy, p[2] + dz];
+}
+
+function pointOnSphere(r: number, a: number, b: number): NumArr3 {
+    const x = r * Math.sin(b) * Math.cos(a);
+    const y = r * Math.sin(b) * Math.sin(a);
+    const z = r * Math.cos(b);
+    return [x, y, z];
+}
+
+export function createSphere(radius: number = 1, xseg: number = 10, yseg: number = 10, center: NumArr3 = [0, 0, 0]) {
+
+    const vertices = [];
+    const normals = [];
+    const texcoords = [];
+
+    const alpha = 2 * Math.PI / xseg;
+    const beta = Math.PI / yseg;
+
+    for (let i = 0; i < xseg; ++i) {
+        for (let j = 0; j < yseg; ++j) {
+            const a0 = -Math.PI + i * alpha;
+            const a1 = -Math.PI + (i + 1) * alpha;
+            const b0 = -Math.PI / 2 + j * beta;
+            const b1 = -Math.PI / 2 + (j + 1) * beta;
+
+            const p0: NumArr3 = pointTranslate(pointOnSphere(radius, a0, Math.PI / 2 - b0), center[0], center[1], center[2]);
+            const p1: NumArr3 = pointTranslate(pointOnSphere(radius, a1, Math.PI / 2 - b0), center[0], center[1], center[2]);
+            const p2: NumArr3 = pointTranslate(pointOnSphere(radius, a1, Math.PI / 2 - b1), center[0], center[1], center[2]);
+            const p3: NumArr3 = pointTranslate(pointOnSphere(radius, a0, Math.PI / 2 - b1), center[0], center[1], center[2]);
+
+            const nv0 = vec3.subtract(vec3.create(), vec3.fromValues(...p0), vec3.fromValues(...center));
+            const nv1 = vec3.subtract(vec3.create(), vec3.fromValues(...p1), vec3.fromValues(...center));
+            const nv2 = vec3.subtract(vec3.create(), vec3.fromValues(...p2), vec3.fromValues(...center));
+            const nv3 = vec3.subtract(vec3.create(), vec3.fromValues(...p3), vec3.fromValues(...center));
+
+            vertices.push(...p0);
+            normals.push(...nv0);
+            texcoords.push((a0 + Math.PI) / (2 * Math.PI), (b0 + Math.PI / 2) / Math.PI);
+
+            vertices.push(...p2);
+            normals.push(...nv2);
+            texcoords.push((a1 + Math.PI) / (2 * Math.PI), (b1 + Math.PI / 2) / Math.PI);
+
+            vertices.push(...p3);
+            normals.push(...nv3);
+            texcoords.push((a0 + Math.PI) / (2 * Math.PI), (b1 + Math.PI / 2) / Math.PI);
+
+            vertices.push(...p0);
+            normals.push(...nv0);
+            texcoords.push((a0 + Math.PI) / (2 * Math.PI), (b0 + Math.PI / 2) / Math.PI);
+
+            vertices.push(...p1);
+            normals.push(...nv1);
+            texcoords.push((a1 + Math.PI) / (2 * Math.PI), (b0 + Math.PI / 2) / Math.PI);
+
+            vertices.push(...p2);
+            normals.push(...nv2);
+            texcoords.push((a1 + Math.PI) / (2 * Math.PI), (b1 + Math.PI / 2) / Math.PI);
+        }
+    }
+
+    return {
+        hasIndices: false,
+        nvertices: vertices.length / 3,
+        verticeSize: 3,
+        vertices: new Float32Array(vertices),
+        normals: new Float32Array(normals),
+        texcoords: new Float32Array(texcoords)
     }
 
 }

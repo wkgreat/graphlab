@@ -24,7 +24,8 @@ export default defineConfig([
       "@typescript-eslint/no-unused-vars": "warn",
       "@typescript-eslint/no-explicit-any": "warn",
       "no-unused-private-class-members": "warn",
-      "prefer-const": "warn"
+      "prefer-const": "warn",
+      "no-empty": "warn"
     }
   },
 ])

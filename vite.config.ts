@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path';
-import Inspect from 'vite-plugin-inspect'
 import path from 'path'
 import fs from 'fs'
 
@@ -42,6 +41,6 @@ export default defineConfig(({ command }) => ({
     },
   },
   plugins: [
-    react(),
-  ],
+    react()
+  ]
 }))

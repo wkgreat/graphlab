@@ -122,7 +122,7 @@ export default class SimpleLineProgram {
                 cullMode: 'none'
             },
             depthStencil: {
-                format: 'depth24plus',
+                format: 'depth32float',
                 depthWriteEnabled: true,
                 depthCompare: 'less'
             }

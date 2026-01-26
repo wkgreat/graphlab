@@ -277,7 +277,7 @@ export async function visualizeDEM(gpuinfo: GPUInfo, canvasInfo: CanvasGPUInfo, 
         depthStencil: {
             depthWriteEnabled: true,
             depthCompare: 'less',
-            format: 'depth24plus',
+            format: 'depth32float',
         },
     });
 
@@ -370,7 +370,7 @@ export async function visualizeDEM(gpuinfo: GPUInfo, canvasInfo: CanvasGPUInfo, 
 
     let depthTexture = device.createTexture({
         size: [canvasInfo.canvas.width, canvasInfo.canvas.height],
-        format: 'depth24plus',
+        format: 'depth32float',
         usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
@@ -406,7 +406,7 @@ export async function visualizeDEM(gpuinfo: GPUInfo, canvasInfo: CanvasGPUInfo, 
             depthTexture.destroy();
             depthTexture = device.createTexture({
                 size: [canvasInfo.canvas.width, canvasInfo.canvas.height],
-                format: 'depth24plus',
+                format: 'depth32float',
                 usage: GPUTextureUsage.RENDER_ATTACHMENT,
             });
         }

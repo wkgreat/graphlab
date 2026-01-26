@@ -1,0 +1,46 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+/* position: fixed;
+left: 0px;
+background-color: rgba(255, 255, 255, 0.5); */
+
+#describe-div {
+    /* 定位 */
+    position: fixed;
+    top: 5px;
+    /* 根据高度调整 */
+    left: 5px;
+    background-color: #2d3748;
+    /* 深灰/藏青色 */
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: sans-serif;
+    white-space: nowrap;
+
+}
+
+/* #describe-div {
+    position: fixed;
+    left: 0px;
+    background-color: rgba(255, 255, 255, 0.5);
+} */
+
+#demo-div {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+}
+
+.demo-webgpu-canvas {
+    height: 100%;
+    width: 100%;
+}

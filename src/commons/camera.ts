@@ -2,9 +2,9 @@ import { vec3, vec4, mat4 } from "gl-matrix";
 
 class Camera {
 
-    from = vec4.fromValues(1, 1, 1, 1);
-    to = vec4.fromValues(0, 0, 0, 1);
-    up = vec4.fromValues(0, 1, 0, 0);
+    #from = vec4.fromValues(1, 1, 1, 1);
+    #to = vec4.fromValues(0, 0, 0, 1);
+    #up = vec4.fromValues(0, 1, 0, 0);
     #viewMtx = mat4.create();
     #invViewMtx = mat4.create();
 
@@ -15,13 +15,28 @@ class Camera {
     }
 
     setFrom(vin: vec3 | vec4) {
-        this.setVector4(this.from, vin);
+        this.setVector4(this.#from, vin);
+        this._look();
     }
     setTo(vin: vec3 | vec4) {
-        this.setVector4(this.to, vin);
+        this.setVector4(this.#to, vin);
+        this._look();
     }
     setUp(vin: vec3 | vec4) {
-        this.setVector4(this.up, vin);
+        this.setVector4(this.#up, vin);
+        this._look();
+    }
+
+    get from() {
+        return this.#from;
+    }
+
+    get to() {
+        return this.#to;
+    }
+
+    get up() {
+        return this.#up;
     }
 
     setVector4(vout: vec4, vin: vec3 | vec4) {
@@ -40,16 +55,11 @@ class Camera {
     }
 
     _look() {
-        mat4.lookAt(this.#viewMtx, this._vec3(this.from), this._vec3(this.to), this._vec3(this.up));
+        mat4.lookAt(this.#viewMtx, this._vec3(this.#from), this._vec3(this.#to), this._vec3(this.#up));
         mat4.invert(this.#invViewMtx, this.#viewMtx);
     }
 
-    getFrom(): vec4 {
-        return this.from;
-    }
-
     get matrices() {
-        this._look();
         return {
             viewMtx: this.#viewMtx,
             invViewMtx: this.#invViewMtx
@@ -57,15 +67,13 @@ class Camera {
     }
 
     get viewMtx() {
-        this._look();
         return this.#viewMtx;
     }
 
     getRelViewMatrix() {
-        this._look();
-        const f = vec3.fromValues(this.from[0], this.from[1], this.from[2]);
-        const t = vec3.fromValues(this.to[0], this.to[1], this.to[2]);
-        const u = vec3.fromValues(this.up[0], this.up[1], this.up[2]);
+        const f = vec3.fromValues(this.#from[0], this.#from[1], this.#from[2]);
+        const t = vec3.fromValues(this.#to[0], this.#to[1], this.#to[2]);
+        const u = vec3.fromValues(this.#up[0], this.#up[1], this.#up[2]);
         const d = vec3.sub(vec3.create(), t, f);
         const m = mat4.lookAt(mat4.create(), vec3.fromValues(0, 0, 0), d, u);
         return m;
@@ -78,8 +86,8 @@ class Camera {
      * @returns {void}
     */
     round(dx: number, dy: number) {
-        const viewFrom4 = vec4.transformMat4(vec4.create(), this.from, this.#viewMtx);
-        const viewTo4 = vec4.transformMat4(vec4.create(), this.to, this.#viewMtx);
+        const viewFrom4 = vec4.transformMat4(vec4.create(), this.#from, this.#viewMtx);
+        const viewTo4 = vec4.transformMat4(vec4.create(), this.#to, this.#viewMtx);
         const viewFrom3 = this._vec3(viewFrom4);
         const viewTo3 = this._vec3(viewTo4);
 
@@ -87,7 +95,7 @@ class Camera {
         vec3.rotateX(viewFrom3, viewFrom3, viewTo3, dy); // 绕x轴旋转dy
 
         vec4.set(viewFrom4, viewFrom3[0], viewFrom3[1], viewFrom3[2], 1);
-        vec4.transformMat4(this.from, viewFrom4, this.#invViewMtx);
+        vec4.transformMat4(this.#from, viewFrom4, this.#invViewMtx);
 
         this._look();
     }
@@ -98,9 +106,9 @@ class Camera {
     */
     zoom(f: number) {
         const d = vec4.create();
-        vec4.sub(d, this.to, this.from);
+        vec4.sub(d, this.#to, this.#from);
         vec4.multiply(d, d, [f, f, f, f]);
-        vec4.add(this.from, this.from, d);
+        vec4.add(this.#from, this.#from, d);
         this._look();
     }
 
@@ -111,16 +119,16 @@ class Camera {
     */
     move(dx: number, dy: number) {
 
-        const viewFrom4 = vec4.transformMat4(vec4.create(), this.from, this.#viewMtx);
-        const viewTo4 = vec4.transformMat4(vec4.create(), this.to, this.#viewMtx);
+        const viewFrom4 = vec4.transformMat4(vec4.create(), this.#from, this.#viewMtx);
+        const viewTo4 = vec4.transformMat4(vec4.create(), this.#to, this.#viewMtx);
 
         const mtx = mat4.create();
         mat4.translate(mtx, mtx, [dx, dy, 0]);
         vec4.transformMat4(viewFrom4, viewFrom4, mtx);
         vec4.transformMat4(viewTo4, viewTo4, mtx);
 
-        vec4.transformMat4(this.from, viewFrom4, this.#invViewMtx);
-        vec4.transformMat4(this.to, viewTo4, this.#invViewMtx);
+        vec4.transformMat4(this.#from, viewFrom4, this.#invViewMtx);
+        vec4.transformMat4(this.#to, viewTo4, this.#invViewMtx);
 
         this._look();
 
@@ -158,59 +166,54 @@ export class CameraMouseControl {
     }
 
     handleMouseDown() {
-        const that = this;
         return (e: any) => {
             if (e.button == LEFTBUTTON) {
-                that.leftButtonDown = true;
+                this.leftButtonDown = true;
             } else if (e.button == WHEELBUTTON) {
-                that.wheelButtonDown = true;
+                this.wheelButtonDown = true;
             }
-            that.lastMouseX = e.clientX;
-            that.lastMouseY = e.clientY;
+            this.lastMouseX = e.clientX;
+            this.lastMouseY = e.clientY;
 
         }
     }
 
     handleMouseMove() {
-        const that = this;
         return (e: any) => {
             if (this.leftButtonDown) {
-                const dx = e.clientX - that.lastMouseX;
-                const dy = e.clientY - that.lastMouseY;
-                that.camera.round(-dx / 200, -dy / 200);
+                const dx = e.clientX - this.lastMouseX;
+                const dy = e.clientY - this.lastMouseY;
+                this.camera.round(-dx / 200, -dy / 200);
             } else if (this.wheelButtonDown) {
                 e.preventDefault();
-                const dx = e.clientX - that.lastMouseX;
-                const dy = e.clientY - that.lastMouseY;
-                that.camera.move(-dx / 5, dy / 5);
+                const dx = e.clientX - this.lastMouseX;
+                const dy = e.clientY - this.lastMouseY;
+                this.camera.move(-dx / 5, dy / 5);
             }
-            that.lastMouseX = e.clientX;
-            that.lastMouseY = e.clientY;
+            this.lastMouseX = e.clientX;
+            this.lastMouseY = e.clientY;
         }
     }
 
     handleMouseUp() {
-        const that = this;
         return (e: any) => {
             if (e.button == LEFTBUTTON) {
-                that.leftButtonDown = false;
+                this.leftButtonDown = false;
             }
             if (e.button == WHEELBUTTON) {
-                that.wheelButtonDown = false;
+                this.wheelButtonDown = false;
             }
         }
     }
 
     handleMouseLeave() {
-        const that = this;
         return (e: any) => {
-            that.leftButtonDown = false;
-            that.wheelButtonDown = false;
+            this.leftButtonDown = false;
+            this.wheelButtonDown = false;
         }
     }
 
     handleMouseWheel() {
-        const that = this;
         return (e: any) => {
             e.preventDefault();
             this.camera.zoom(e.wheelDeltaY / 120 * (1 / 10));

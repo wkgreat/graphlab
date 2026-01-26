@@ -229,12 +229,12 @@ export function createRenderPassDescriptor(info: RenderPassInfo): GPURenderPassD
     return passDescriptor;
 }
 
-export function createDepthTexture(gpuinfo: GPUInfo, width: number, height: number): GPUTexture {
+export function createDepthTexture(gpuinfo: GPUInfo, width: number, height: number, format: GPUTextureFormat = 'depth32float'): GPUTexture {
 
     const depthTexture = gpuinfo.device.createTexture({
         label: "depthTexture",
         size: [width, height],
-        format: 'depth24plus',
+        format,
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST
     });
 
