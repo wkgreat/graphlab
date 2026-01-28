@@ -1,22 +1,31 @@
-import { createBuffersAndAttributesFromArrays, makeShaderDataDefinitions, makeStructuredView, type BuffersAndAttributes, type ShaderDataDefinitions } from 'webgpu-utils';
-import type { CanvasGPUInfo, GPUInfo } from '../webgpuUtils';
-import code from '../shader/mesh.wgsl?raw';
-import type Camera from '../camera';
-import type Projection from '../projection';
 import { mat4, vec3, vec4 } from 'gl-matrix';
-import type Scene from '../scene';
+import { createBuffersAndAttributesFromArrays, makeShaderDataDefinitions, makeStructuredView, type BuffersAndAttributes, type ShaderDataDefinitions } from 'webgpu-utils';
+import type Camera from '../camera';
+import Color, { ColorRamp, Colors } from '../color';
 import type { NumArr4 } from '../defines';
-import { createSphere, Triangle, type Ray } from '../objects';
 import { BlinnPhongMaterial } from '../material';
 import { vec4t3 } from '../matrix';
+import { createSphere, Triangle, type Ray } from '../objects';
+import type Projection from '../projection';
+import type Scene from '../scene';
+import code from '../shader/mesh.wgsl?raw';
+import type { CanvasGPUInfo, GPUInfo } from '../webgpuUtils';
 
 export type MeshColorMode = 'vertex' | 'face' | 'mesh'
 
-interface MeshWebGPUOptions {
+export const MeshRenderSpace = {
+    WORLD: 0,
+    NDC: 1
+} as const;
+
+export type MeshRenderSpace = typeof MeshRenderSpace[keyof typeof MeshRenderSpace];
+
+export interface MeshWebGPUOptions {
     depth: {
         depthBias: number,
         depthBiasSlopeScale: number
     }
+    space: MeshRenderSpace
 }
 
 export const MeshSelectMode = {
@@ -25,6 +34,8 @@ export const MeshSelectMode = {
     FACE: 2,
     MESH: 3
 } as const;
+
+export type MeshSelectMode = typeof MeshSelectMode[keyof typeof MeshSelectMode];
 
 export class Mesh {
 
@@ -47,6 +58,8 @@ export class Mesh {
     wireframeColors?: Float32Array
 
     #material: BlinnPhongMaterial;
+    #lighting: boolean = true;
+    #space: MeshRenderSpace = MeshRenderSpace.WORLD;
 
     label: string = "Mesh"
     modelmtx: mat4 = mat4.create();
@@ -80,11 +93,11 @@ export class Mesh {
         this.modelmtx = mat4.create();
 
         this.#material = new BlinnPhongMaterial({
-            ka: 0.2,
+            ka: 0.1,
             ambient: [1, 1, 1, 1],
-            kd: 0.4,
-            diffuse: [1, 1, 1, 1],
-            ks: 0.2,
+            kd: 1,
+            diffuse: [0.1, 0.1, 0.1, 0],
+            ks: 0.1,
             specular: [1, 1, 1, 1],
             phong: 1.5
         });
@@ -93,6 +106,14 @@ export class Mesh {
     set wireframe(w: boolean) {
         this.#wireframe = w;
         this.refreshVertexBuffers();
+    }
+
+    set lighting(lighting: boolean) {
+        this.#lighting = lighting;
+    }
+
+    get lighting(): boolean {
+        return this.#lighting;
     }
 
     createDefaultColors() {
@@ -107,7 +128,25 @@ export class Mesh {
             color = color.map(c => c / 255) as NumArr4;
         }
         this.colors = new Float32Array(Array(vertexCount).fill(color).flat());
-        this.refreshDefaultVertexBuffer();
+        this.refreshDefaultVertexBuffer(true);
+    }
+
+    setColors(colors: NumArr4[]) {
+        const vertexCount = this.positions.length / 3;
+        const colorCount = colors.length;
+        const colorData = new Float32Array(vertexCount * 4);
+        for (let i = 0; i < vertexCount; ++i) {
+
+            const color = colors[i % colorCount];
+            colorData[i * 4] = color[0];
+            colorData[i * 4 + 1] = color[1];
+            colorData[i * 4 + 2] = color[2];
+            colorData[i * 4 + 3] = color[3];
+
+        }
+
+        this.colors = colorData;
+        this.refreshDefaultVertexBuffer(true);
     }
 
     createDefaultWireframeColors() {
@@ -122,7 +161,7 @@ export class Mesh {
             color = color.map(c => c / 255) as NumArr4;
         }
         this.wireframeColors = new Float32Array(Array(vertexCount).fill(color).flat());
-        this.refreshWireframeVertexBuffer();
+        this.refreshWireframeVertexBuffer(true);
     }
 
     get wireframe() {
@@ -137,11 +176,14 @@ export class Mesh {
         depth: {
             depthBias: 0,
             depthBiasSlopeScale: 0
-        }
+        },
+        space: MeshRenderSpace.WORLD
     }) {
         this.#webgpu.gpuinfo = gpuinfo;
         this.#webgpu.canvasinfo = canvasinfo;
         this.#webgpu.definition = makeShaderDataDefinitions(code);
+
+        this.#space = options.space;
 
         this.render = new MeshRender(gpuinfo, canvasinfo, scene);
 
@@ -310,6 +352,8 @@ export class Mesh {
         modelView.set({
             hasnormal: this.normals ? 1 : 0,
             hastexcoord: this.texcoords ? 1 : 0,
+            lighting: this.#lighting ? 1 : 0,
+            space: this.#space,
             modelmtx: this.modelmtx,
             normalmtx: mat4.transpose(mat4.create(), mat4.invert(mat4.create(), this.modelmtx))
         });
@@ -511,10 +555,11 @@ export class HalfEdgeInfo {
     faceList: HalfEdgeFace[] = [];
     halfedgeMap: Map<HalfEdgeRef, HalfEdge> = new Map();
 
-    selectedVertexMesh: Mesh | null = null;
-    selectedFaceMesh: Mesh | null = null;
+    selectedVertexMeshes: Mesh[] = [];
+    selectedFaceMeshes: Mesh[] = [];
     faceSelectCallbacks: FaceSelectCallback[] = [];
     vertexSelectCallbacks: VertexSelectCallback[] = [];
+
 
     constructor(mesh: Mesh) {
         this.mesh = mesh;
@@ -595,6 +640,17 @@ export class HalfEdgeInfo {
 
     }
 
+    clearSelectedMeshes() {
+        if (this.selectedFaceMeshes.length > 0) {
+            this.selectedFaceMeshes.forEach(m => m.destroy());
+            this.selectedFaceMeshes = [];
+        }
+        if (this.selectedVertexMeshes.length > 0) {
+            this.selectedVertexMeshes.forEach(m => m.destroy());
+            this.selectedVertexMeshes = [];
+        }
+    }
+
     addFaceSelectCallback(f: FaceSelectCallback) {
         this.faceSelectCallbacks.push(f);
     }
@@ -646,14 +702,7 @@ export class HalfEdgeInfo {
             crossinfo: ray.crossTriangle(t.triangle)
         })).filter(info => info.crossinfo.cross);
 
-        if (this.selectedFaceMesh) {
-            this.selectedFaceMesh.destroy();
-            this.selectedFaceMesh = null;
-        }
-        if (this.selectedVertexMesh) {
-            this.selectedVertexMesh.destroy();
-            this.selectedVertexMesh = null;
-        }
+        this.clearSelectedMeshes();
 
         if (faces.length > 0) {
 
@@ -670,7 +719,8 @@ export class HalfEdgeInfo {
 
             faces = [minInfo];
 
-            this.#buildFacesMesh(faces.map(f => f.faceinfo.triangle));
+            const faceMesh = this.#buildFacesMesh(faces.map(f => f.faceinfo.triangle));
+            this.selectedFaceMeshes.push(faceMesh);
         }
 
         for (const f of this.faceSelectCallbacks) {
@@ -678,7 +728,7 @@ export class HalfEdgeInfo {
         }
     }
 
-    #buildFacesMesh(faces: Triangle[]) {
+    #buildFacesMesh(faces: Triangle[]): Mesh {
         const positions = [];
         const indices = [];
 
@@ -688,21 +738,42 @@ export class HalfEdgeInfo {
             positions.push(...faces[i].p2)
             indices.push(i * 3, i * 3 + 1, i * 3 + 2);
         }
-        this.selectedFaceMesh = new Mesh();
-        this.selectedFaceMesh.positions = new Float32Array(positions);
-        this.selectedFaceMesh.vertexIndices = new Uint32Array(indices);
-        // this.selectedFaceMesh.setColor([255.0 / 255, 215.0 / 255, 0, 1]);
-        this.selectedFaceMesh.setColor([0, 0, 1, 0.5]);
-        this.selectedFaceMesh.setWireframeColor([1, 0, 0, 0.5]);
-        this.selectedFaceMesh.setModelMatrix(mat4.create());
-        this.selectedFaceMesh.wireframe = false;
+        const mesh = new Mesh();
+        mesh.positions = new Float32Array(positions);
+        mesh.vertexIndices = new Uint32Array(indices);
+        mesh.setColor([0, 0, 1, 0.5]);
+        mesh.setWireframeColor([1, 0, 0, 0.5]);
+        mesh.setModelMatrix(mat4.create());
+        mesh.wireframe = false;
 
-        this.selectedFaceMesh.initWebGPU(this.mesh.render.gpuinfo, this.mesh.render.canvasInfo, this.mesh.render.scene, {
+        mesh.initWebGPU(this.mesh.render.gpuinfo, this.mesh.render.canvasInfo, this.mesh.render.scene, {
             depth: {
                 depthBias: -1,
                 depthBiasSlopeScale: -1
-            }
+            },
+            space: MeshRenderSpace.WORLD
         });
+        return mesh;
+    }
+
+    #buildVertexMesh(vertex: HalfEdgeVertex): Mesh {
+        const pos = this.vertexPosition(vertex, true);
+        const sphere = createSphere(0.2, 10, 10, [pos[0], pos[1], pos[2]]);
+        const sphereMesh = new Mesh("sphere");
+        sphereMesh.positions = sphere.vertices;
+        sphereMesh.normals = sphere.normals;
+        sphereMesh.texcoords = sphere.texcoords;
+        sphereMesh.setColor([255.0 / 255, 215.0 / 255, 0, 1]);
+        sphereMesh.setModelMatrix(mat4.create());
+        this.selectedVertexMeshes.push(sphereMesh);
+        sphereMesh.initWebGPU(this.mesh.render.gpuinfo, this.mesh.render.canvasInfo, this.mesh.render.scene, {
+            depth: {
+                depthBias: -1,
+                depthBiasSlopeScale: -1
+            },
+            space: MeshRenderSpace.WORLD
+        });
+        return sphereMesh;
     }
 
     getVerticesByRay(ray: Ray) {
@@ -721,14 +792,7 @@ export class HalfEdgeInfo {
             };
         }).filter(v => ray.dwithinPoint(v.point, 1));
 
-        if (this.selectedFaceMesh) {
-            this.selectedFaceMesh.destroy();
-            this.selectedFaceMesh = null;
-        }
-        if (this.selectedVertexMesh) {
-            this.selectedVertexMesh.destroy();
-            this.selectedVertexMesh = null;
-        }
+        this.clearSelectedMeshes();
 
         if (vertices.length > 0) {
 
@@ -749,27 +813,15 @@ export class HalfEdgeInfo {
 
             vertices = [minVertex];
 
-            const point = vertices[0].point;
-
-            const sphere = createSphere(1, 10, 10, [point[0], point[1], point[2]]);
-            const sphereMesh = new Mesh("sphere");
-            sphereMesh.positions = sphere.vertices;
-            sphereMesh.normals = sphere.normals;
-            sphereMesh.texcoords = sphere.texcoords;
-            sphereMesh.setColor([255.0 / 255, 215.0 / 255, 0, 1]);
-            sphereMesh.setModelMatrix(mat4.create());
-            this.selectedVertexMesh = sphereMesh;
-            this.selectedVertexMesh.initWebGPU(this.mesh.render.gpuinfo, this.mesh.render.canvasInfo, this.mesh.render.scene, {
-                depth: {
-                    depthBias: -1,
-                    depthBiasSlopeScale: -1
-                }
-            });
+            const vertex = this.vertexList[minRef];
+            const vertexMesh = this.#buildVertexMesh(vertex);
+            vertexMesh.setColor(Colors.red);
+            this.selectedVertexMeshes.push(vertexMesh);
 
             if (this.mesh.selectVertexNRing === 0) {
                 ;
             } else if (this.mesh.selectVertexNRing === 1) {
-                const faces = this.getVertexOneRing(this.vertexList[minRef]);
+                const faces = this.getVertexOneRingFaces(this.vertexList[minRef]);
 
                 const triangles = faces.map(face => {
 
@@ -788,7 +840,18 @@ export class HalfEdgeInfo {
 
                 });
 
-                this.#buildFacesMesh(triangles);
+                const faceMesh = this.#buildFacesMesh(triangles);
+
+                this.selectedFaceMeshes.push(faceMesh);
+
+                const vertices = this.getVertexOneRingVertices(this.vertexList[minRef]);
+
+                for (const v of vertices) {
+                    const m = this.#buildVertexMesh(v);
+                    this.selectedVertexMeshes.push(m);
+                }
+
+
             } else {
                 console.warn("其他NRing暂时没实现");
             }
@@ -799,7 +862,7 @@ export class HalfEdgeInfo {
         }
     }
 
-    getVertexOneRing(vertex: HalfEdgeVertex): HalfEdgeFace[] {
+    getVertexOneRingFaces(vertex: HalfEdgeVertex): HalfEdgeFace[] {
 
         const faces: HalfEdgeFace[] = [];
 
@@ -832,6 +895,74 @@ export class HalfEdgeInfo {
 
     }
 
+    getVertexOneRingVertices(vertex: HalfEdgeVertex): HalfEdgeVertex[] {
+
+        const vertices: HalfEdgeVertex[] = [];
+
+        const startHeRef = vertex.halfedge;
+        let he = this.halfedgeMap.get(vertex.halfedge);
+        while (he) {
+            vertices.push(this.vertexList[he.vertexTo]);
+            const opp = this.halfedgeMap.get(he.opposite);
+            if (!opp) {
+                break;
+            }
+            const nextHeRef = opp.next;
+            const next = this.halfedgeMap.get(nextHeRef);
+            if (!next) {
+                break;
+            }
+            if (startHeRef === nextHeRef) {
+                break;
+            }
+            he = next;
+        }
+        return vertices;
+    }
+
+    vertexPosition(vertex: HalfEdgeVertex, applyModelMatrix: boolean = false): vec3 {
+        const p = this.mesh.positions.slice(vertex.position, vertex.position + 3);
+        if (applyModelMatrix) {
+            const v = vec4.fromValues(p[0], p[1], p[2], 1);
+            vec4.transformMat4(v, v, this.mesh.modelmtx);
+            return vec4t3(v);
+        } else {
+            return vec3.fromValues(p[0], p[1], p[2]);
+        }
+
+    }
+
+    faceVertexIdx(vertex: HalfEdgeVertex, face: HalfEdgeFace): number {
+        if (face.vertices[0] == vertex.ref) {
+            return 0;
+        }
+        return face.vertices.findIndex(r => r === vertex.ref);
+    }
+
+    faceVertexIdxOppsiteEdge(face: HalfEdgeFace, edge: HalfEdge): number {
+        const vref0 = edge.vertexFrom;
+        const vref1 = edge.vertexTo;
+        if (face.vertices.includes(vref0) && face.vertices.includes(vref1)) {
+            return face.vertices.findIndex(r => r !== vref0 && r !== vref1);
+        } else {
+            console.warn("faceVertexIdxOppsiteEdge edge not belong to the face!");
+            return -1;
+        }
+    }
+
+    faceToTriangle(face: HalfEdgeFace): Triangle {
+        const vertex0 = this.vertexList[face.vertices[0]];
+        const vertex1 = this.vertexList[face.vertices[1]];
+        const vertex2 = this.vertexList[face.vertices[2]];
+        const p0 = this.mesh.positions.slice(vertex0.position, vertex0.position + 3);
+        const p1 = this.mesh.positions.slice(vertex1.position, vertex1.position + 3);
+        const p2 = this.mesh.positions.slice(vertex2.position, vertex2.position + 3);
+        const v0 = vec3.fromValues(p0[0], p0[1], p0[2]);
+        const v1 = vec3.fromValues(p1[0], p1[1], p1[2]);
+        const v2 = vec3.fromValues(p2[0], p2[1], p2[2]);
+        return new Triangle(v0, v1, v2);
+    }
+
     computeFaceNormal(face: HalfEdgeFace) {
         const vertex0 = this.vertexList[face.vertices[0]];
         const vertex1 = this.vertexList[face.vertices[1]];
@@ -857,7 +988,7 @@ export class HalfEdgeInfo {
     computeNormals() {
         const normalData = new Float32Array(this.mesh.vertexCount * 3);
         for (const vertex of this.vertexList) {
-            const faces = this.getVertexOneRing(vertex);
+            const faces = this.getVertexOneRingFaces(vertex);
             const faceNormals = [];
             for (const face of faces) {
                 faceNormals.push(this.computeFaceNormal(face));
@@ -873,9 +1004,96 @@ export class HalfEdgeInfo {
         }
         this.mesh.normals = normalData;
         this.mesh.refreshVertexBuffers(true);
-
-        console.log(normalData);
     }
+
+    computeAveragingRegionArea(vertex: HalfEdgeVertex): number {
+        const oneRingFaces = this.getVertexOneRingFaces(vertex);
+        let regionArea = 0;
+        for (const face of oneRingFaces) {
+            const triangle = this.faceToTriangle(face);
+            const idx = this.faceVertexIdx(vertex, face);
+            if (idx === -1) {
+                console.log("faceVertexIdx is -1");
+                continue;
+            }
+            regionArea += triangle.computeBarycentricCellArea(idx);
+        }
+        return regionArea;
+    }
+
+    computeContagentLaplace(vertex: HalfEdgeVertex): vec3 {
+        const regionArea = this.computeAveragingRegionArea(vertex);
+        const oneRingVertices = this.getVertexOneRingVertices(vertex);
+
+        const s3 = vec3.fromValues(0, 0, 0);
+        for (const vert of oneRingVertices) {
+            const edgeRef = `${vertex.ref}-${vert.ref}`;
+            const edge = this.halfedgeMap.get(edgeRef);
+            const opp = this.halfedgeMap.get(edge.opposite);
+            if (!opp) {
+                console.log("computeContagentLaplace vert opp is null!");
+                continue;
+            }
+            const face0 = this.faceList[edge.face];
+            const face1 = this.faceList[opp.face];
+            const idx0 = this.faceVertexIdxOppsiteEdge(face0, edge);
+            const idx1 = this.faceVertexIdxOppsiteEdge(face1, opp);
+            const triangle0 = this.faceToTriangle(face0);
+            const triangle1 = this.faceToTriangle(face1);
+            const tan0 = Math.tan(triangle0.computeRadians(idx0));
+            const tan1 = Math.tan(triangle1.computeRadians(idx1));
+            const cot0 = 1 / tan0;
+            const cot1 = 1 / tan1;
+            const pos0 = this.vertexPosition(vertex);
+            const pos1 = this.vertexPosition(vert);
+            const v3 = vec3.sub(vec3.create(), pos1, pos0);
+            vec3.scale(v3, v3, cot0 + cot1);
+            vec3.add(s3, s3, v3);
+        }
+        const doubleArea = regionArea * 2;
+        vec3.scale(s3, s3, 1 / doubleArea);
+
+        return s3;
+
+    }
+
+    computeMeanCurvature(vertex: HalfEdgeVertex): number {
+        const laplace = this.computeContagentLaplace(vertex);
+        const mag = vec3.length(laplace);
+        if (mag === 0) {
+            return 0;
+        }
+        if (isNaN(mag)) {
+            console.warn("laplace mag is NaN");
+            return 0;
+        }
+        return 0.5 * mag;
+    }
+
+    renderAveraginRegionArea() {
+        const areas = this.vertexList.map(v => this.computeAveragingRegionArea(v));
+        const minArea = areas.reduce((a, b) => a < b ? a : b);
+        const maxArea = areas.reduce((a, b) => a > b ? a : b);
+        const weights = areas.map(c => (c - minArea) / (maxArea - minArea));
+        const colors = weights.map(w => Color.interpolate(ColorRamp.COOLWARN, w).toArray());;
+        // const colors = weights.map(w => Colors.mix(Colors.green, Colors.red, w));
+        this.mesh.setColors(colors);
+    }
+
+    renderMeanCurvature() {
+        const curvatures = this.vertexList.map(v => this.computeMeanCurvature(v));
+        const minCurvature = curvatures.reduce((a, b) => a < b ? a : b);
+        const maxCurvature = curvatures.reduce((a, b) => a > b ? a : b);
+        let weights = curvatures.map(c => (c - minCurvature) / (maxCurvature - minCurvature));
+        weights = weights.map(w => Math.pow(w, 0.3));
+        const colors = weights.map(w => Color.interpolate(ColorRamp.COOLWARN, w).toArray());
+        // const colors = weights.map(w => Colors.mix(Colors.green, Colors.red, w));
+        this.mesh.setColors(colors);
+    }
+
+    computeGaussianCurvature() {}
+
+    computePrincipalCuvature() {}
 
 }
 

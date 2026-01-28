@@ -12,7 +12,7 @@ import bunnyRes3URL from '/data/mesh/bun_zipper_res3.ply?url';
 import bunnyRes4URL from '/data/mesh/bun_zipper_res4.ply?url';
 
 import { mat4, vec3 } from 'gl-matrix';
-import { Mesh, MeshSelectMode } from '../../commons/mesh/mesh';
+import { Mesh, MeshRenderSpace, MeshSelectMode } from '../../commons/mesh/mesh';
 import PLYMeshData from '../../commons/mesh/plyformat';
 import Scene from '../../commons/scene';
 import PointLight from '../../commons/light';
@@ -52,7 +52,11 @@ class MeshDemo {
     readyCallbacks: ((MeshDemo) => void)[] = []
 
     paneParams = {
-        wireframe: true,
+        wireframe: {
+            enable: true,
+            color: { r: 0, g: 0, b: 0, a: 0.1 }
+        },
+        lighting: false,
         meshurl: bunnyURL,
         selectMode: MeshSelectMode.VERTEX,
         nring: 1
@@ -97,7 +101,7 @@ class MeshDemo {
             this.projection = new Projection(Math.PI / 2, width / height, 1, 10000);
 
             this.scene = new Scene(this.camera, this.projection);
-            this.scene.addLight(new PointLight([100, -100, 100], [1, 1, 1, 1]));
+            this.scene.addLight(new PointLight([500, -500, 500], [1, 1, 1, 0.5]));
             this.scene.initWebGPU(this.gpuInfo, this.canvasInfo);
 
             this.cameraMouseCtrl = new CameraMouseControl(this.camera, this.canvasInfo.canvas);
@@ -200,18 +204,25 @@ class MeshDemo {
                 mat4.rotateX(matrix, matrix, Math.PI / 2);
                 mat4.scale(matrix, matrix, vec3.fromValues(1000, 1000, 1000));
                 mesh.setModelMatrix(matrix);
-
-                mesh.wireframe = this.paneParams.wireframe;
+                mesh.lighting = this.paneParams.lighting;
+                mesh.wireframe = this.paneParams.wireframe.enable;
+                const wireframeColor = this.paneParams.wireframe.color;
+                mesh.setWireframeColor([
+                    wireframeColor.r / 255,
+                    wireframeColor.g / 255,
+                    wireframeColor.b / 255,
+                    wireframeColor.a
+                ]);
                 mesh.selectMode = MeshSelectMode.VERTEX;
                 mesh.selectVertexNRing = this.paneParams.nring;
                 mesh.initWebGPU(this.gpuInfo, this.canvasInfo, this.scene, {
                     depth: {
                         depthBias: 1,
                         depthBiasSlopeScale: 1
-                    }
+                    },
+                    space: MeshRenderSpace.WORLD
                 });
                 this.meshes.push(mesh);
-
             });
         }
     }
@@ -222,7 +233,8 @@ class MeshDemo {
             depth: {
                 depthBias: 0,
                 depthBiasSlopeScale: 0
-            }
+            },
+            space: MeshRenderSpace.WORLD
         });
         this.meshes.push(mesh);
 
@@ -271,20 +283,22 @@ class MeshDemo {
             for (const mesh of this.meshes) {
                 mesh.wireframe = false;
                 mesh.draw(pass);
-                if (this.paneParams.wireframe) {
+                if (this.paneParams.wireframe.enable) {
                     mesh.wireframe = true;
                     mesh.draw(pass);
                 }
-                if (mesh.halfedge && mesh.halfedge.selectedVertexMesh) {
-                    mesh.halfedge.selectedVertexMesh.draw(pass);
+                if (mesh.halfedge) {
+                    mesh.halfedge.selectedVertexMeshes.forEach(m => m.draw(pass));
                 }
-                if (mesh.halfedge && mesh.halfedge.selectedFaceMesh) {
-                    mesh.halfedge.selectedFaceMesh.wireframe = false;
-                    mesh.halfedge.selectedFaceMesh.draw(pass);
-                    if (this.paneParams.wireframe) {
-                        mesh.halfedge.selectedFaceMesh.wireframe = true;
-                        mesh.halfedge.selectedFaceMesh.draw(pass);
-                    }
+                if (mesh.halfedge) {
+                    mesh.halfedge.selectedFaceMeshes.forEach(m => {
+                        m.wireframe = false;
+                        m.draw(pass);
+                        if (this.paneParams.wireframe) {
+                            m.wireframe = true;
+                            m.draw(pass);
+                        }
+                    })
                 }
             }
 
@@ -305,7 +319,35 @@ class MeshDemo {
     }
 
     setPane() {
-        this.pane.addBinding(this.paneParams, "wireframe", {
+
+
+        const lightingFolder = this.pane.addFolder({
+            title: "Lighting",
+            expanded: false,
+        });
+
+        lightingFolder.addBinding(this.paneParams, "lighting", {
+            label: "lighting"
+        }).on("change", (e) => {
+            for (const mesh of this.meshes) {
+                mesh.lighting = e.value;
+            }
+        })
+
+        for (let i = 0; i < this.scene.lights.length; ++i) {
+            this.scene.lights[i].addHelper(lightingFolder, {
+                create: true,
+                title: `PointLight ${i}`,
+                expanded: false
+            });
+        }
+
+        const meshFolder = this.pane.addFolder({
+            title: "Mesh",
+            expanded: true,
+        });
+
+        meshFolder.addBinding(this.paneParams.wireframe, "enable", {
             label: "wireframe"
         }).on("change", (e) => {
             for (const mesh of this.meshes) {
@@ -313,7 +355,22 @@ class MeshDemo {
             }
         })
 
-        this.pane.addBinding(this.paneParams, 'meshurl', {
+
+        meshFolder.addBinding(this.paneParams.wireframe, "color", {
+            label: "wireframe color"
+        }).on("change", (e) => {
+            for (const mesh of this.meshes) {
+                const c = e.value;
+                mesh.setWireframeColor([
+                    c.r / 255,
+                    c.g / 255,
+                    c.b / 255,
+                    c.a
+                ]);
+            }
+        })
+
+        meshFolder.addBinding(this.paneParams, 'meshurl', {
             label: "Mesh",
             options: {
                 ...MeshSources
@@ -326,8 +383,8 @@ class MeshDemo {
             this.loadMesh(e.value);
         })
 
-        this.pane.addBinding(this.paneParams, 'selectMode', {
-            label: "选择模式",
+        meshFolder.addBinding(this.paneParams, 'selectMode', {
+            label: "Select Mode",
             options: {
                 none: MeshSelectMode.NONE,
                 vertex: MeshSelectMode.VERTEX,
@@ -339,7 +396,7 @@ class MeshDemo {
             }
         });
 
-        this.pane.addBinding(this.paneParams, 'nring', {
+        meshFolder.addBinding(this.paneParams, 'nring', {
             label: "vertex ring",
             options: {
                 0: 0,
@@ -351,12 +408,32 @@ class MeshDemo {
             }
         });
 
-        this.pane.addButton({
+        meshFolder.addButton({
             title: "生成法向量"
         }).on("click", () => {
             for (const mesh of this.meshes) {
                 if (mesh.halfedge) {
                     mesh.halfedge.computeNormals();
+                }
+            }
+        });
+
+        meshFolder.addButton({
+            title: "计算平均域面积"
+        }).on("click", () => {
+            for (const mesh of this.meshes) {
+                if (mesh.halfedge) {
+                    mesh.halfedge.renderAveraginRegionArea();
+                }
+            }
+        });
+
+        meshFolder.addButton({
+            title: "计算平均曲率"
+        }).on("click", () => {
+            for (const mesh of this.meshes) {
+                if (mesh.halfedge) {
+                    mesh.halfedge.renderMeanCurvature();
                 }
             }
         });

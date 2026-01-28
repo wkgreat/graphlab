@@ -25,6 +25,64 @@ export class Triangle {
         this.p1 = p1;
         this.p2 = p2;
     }
+
+    computeArea(): number {
+        const e0 = vec3.sub(vec3.create(), this.p1, this.p0);
+        const e1 = vec3.sub(vec3.create(), this.p2, this.p0);
+        const c = vec3.cross(vec3.create(), e0, e1);
+        return vec3.length(c) / 2.0;
+    }
+
+    #selectPointByIndex(idx: number): [vec3, vec3, vec3] {
+        if (idx === 0) {
+            return [this.p0, this.p1, this.p2];
+        } else if (idx === 1) {
+            return [this.p1, this.p2, this.p0];
+        } else {
+            return [this.p2, this.p0, this.p1];
+        }
+    }
+
+    computeRadians(idx: number): number {
+        const [a0, a1, a2] = this.#selectPointByIndex(idx);
+        const v0 = vec3.create();
+        const v1 = vec3.create();
+        vec3.sub(v0, a1, a0);
+        vec3.normalize(v0, v0);
+        vec3.sub(v1, a2, a0);
+        vec3.normalize(v1, v1);
+        return Math.acos(vec3.dot(v0, v1));
+    }
+
+    computeBarycentricCellArea(idx: number): number {
+        const [a0, a1, a2] = this.#selectPointByIndex(idx);
+        const x0 = vec3.create(); // right
+        const x1 = vec3.create(); // left
+        const center = vec3.create();
+        vec3.add(x0, a0, a1);
+        vec3.scale(x0, x0, 0.5);
+        vec3.add(x1, a0, a2);
+        vec3.scale(x1, x1, 0.5);
+        vec3.add(center, a0, a1);
+        vec3.add(center, center, a2);
+        vec3.scale(center, center, 1 / 3.0);
+        const t0 = new Triangle(a0, center, x1);
+        const t1 = new Triangle(a0, x0, center);
+        const area0 = t0.computeArea();
+        const area1 = t1.computeArea();
+        return area0 + area1;
+
+    }
+
+    computeVoronoiCellArea(idx: number): number {
+        //TODO
+        return 0;
+    }
+
+    computeMixedVoronoiCellArea(idx: number): number {
+        //TODO
+        return 0;
+    }
 }
 
 export class Ray {
