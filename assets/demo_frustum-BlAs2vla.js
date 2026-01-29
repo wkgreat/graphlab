@@ -1,4 +1,4 @@
-import"./modulepreload-polyfill-B5Qt9EMX.js";import{N as R,C as p,G as k,P as N,c as A,a as W}from"./color-Bd6XzoaT.js";import{e as E,c as b,l as q,i as M,g as I,n as C,s as Z,h as r,j as O,k as o,m as u,b as Y,d as _,C as H,a as X,P as $}from"./camera-DXA52umf.js";import{m as j,c as T,a as S}from"./webgpu-utils.module-DPkR54bZ.js";const V=`\r
+import"./modulepreload-polyfill-B5Qt9EMX.js";import{N as R,C as p,G as k,P as N,c as A,a as W}from"./color-cpTTa4kS.js";import{e as E,c as b,l as q,i as M,g as I,n as C,s as Z,h as r,j as O,k as o,m as u,b as Y,d as _,C as H,a as X,P as $}from"./camera-B51MqHoz.js";import{m as j,c as T,a as S}from"./webgpu-utils.module-DPkR54bZ.js";const V=`\r
 struct SceneUniform {\r
     viewmtx: mat4x4f,\r
     projmtx: mat4x4f\r
