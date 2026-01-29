@@ -4,7 +4,7 @@ import type Projection from "./projection";
 import { Ray } from "./objects";
 import type PointLight from "./light";
 import type { CanvasGPUInfo, GPUInfo } from "./webgpuUtils";
-import sceneCode from "./shader/scene.wgsl?raw";
+import sceneCode from "./shader/scene.wgsl";
 import { makeShaderDataDefinitions, makeStructuredView, type ShaderDataDefinitions } from "webgpu-utils";
 import { vec4t3 } from "./matrix";
 
@@ -107,7 +107,7 @@ export default class Scene {
                 center: vec4t3(this.camera.to),
                 up: vec4t3(this.camera.up),
                 viewmtx: this.camera.viewMtx,
-                viewmtxInv: vec4.inverse(vec4.create(), this.camera.viewMtx)
+                viewmtxInv: mat4.invert(mat4.create(), this.camera.viewMtx)
             }
 
             const projectionData = {
@@ -116,7 +116,7 @@ export default class Scene {
                 fovy: this.projection.fovy,
                 aspect: this.projection.aspect,
                 projmtx: this.projection.perspectiveMatrixZO,
-                projmtxInv: vec4.inverse(vec4.create(), this.projection.perspectiveMatrixZO)
+                projmtxInv: mat4.invert(mat4.create(), this.projection.perspectiveMatrixZO)
             }
 
             const viewportData = {
@@ -135,13 +135,15 @@ export default class Scene {
                 });
             }
 
-            sceneView.set({
+            const uniformData = {
                 camera: cameraData,
                 projection: projectionData,
                 viewport: viewportData,
                 numLights: nLights,
                 lights: lightData
-            });
+            }
+
+            sceneView.set(uniformData);
 
             device.queue.writeBuffer(this.#webgpu.uniform, 0, sceneView.arrayBuffer);
         }

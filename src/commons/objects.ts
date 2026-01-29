@@ -4,7 +4,7 @@ import type { NumArr3, NumArr4 } from "./defines";
 import type Projection from "./projection";
 import { createCheckerBoardTexture } from "./texture";
 import type { CanvasGPUInfo, GPUInfo } from "./webgpuUtils";
-import { vec3 } from "gl-matrix";
+import { mat4, vec3, vec4 } from "gl-matrix";
 
 interface RayCrossTriangleResult {
     cross: boolean,
@@ -604,3 +604,106 @@ export function createSphere(radius: number = 1, xseg: number = 10, yseg: number
     }
 
 }
+
+function pointAtConeCircle(theta: number, height: number, radius: number): NumArr3 {
+    const x = radius * Math.cos(theta);
+    const y = radius * Math.sin(theta);
+    const z = height;
+    return [x, y, z];
+}
+
+function normalOnConeAtOrigin(p: NumArr3): vec3 {
+    const vp = vec3.fromValues(...p);
+    const vo = vec3.fromValues(0, 0, 0);
+    const v1 = vec3.subtract(vec3.create(), vp, vo);
+    const vc = vec3.fromValues(0, 0, p[2]);
+    const va = vec3.subtract(vec3.create(), vc, vo);
+    const vr = vec3.subtract(vec3.create(), vp, vc);
+    const v2 = vec3.cross(vec3.create(), vr, va);
+    const n = vec3.cross(vec3.create(), v1, v2);
+    if (vec3.dot(n, vr) < 0) {
+        vec3.negate(n, n);
+    }
+    vec3.normalize(n, n);
+    return n;
+}
+
+export function createConeAtOrigin(radius = 1, height = 1, hseg = 10, vseg = 10) {
+    const d_a = Math.PI * 2 / hseg;
+    const d_h = height / vseg;
+    const positions = [];
+    const normals = [];
+    const texcoords = [];
+    //侧面
+    for (let i = 0; i < hseg; ++i) {
+        for (let j = 0; j < vseg; ++j) {
+            const a0 = d_a * i;
+            const a1 = d_a * (i + 1);
+            const h0 = d_h * j;
+            const h1 = d_h * (j + 1);
+            const r0 = (h0 / height) * radius;
+            const r1 = (h1 / height) * radius;
+            //位置
+
+            const p0 = pointAtConeCircle(a0, h0, r0);
+            const p1 = pointAtConeCircle(a1, h0, r0);
+            const p2 = pointAtConeCircle(a1, h1, r1);
+            const p3 = pointAtConeCircle(a0, h1, r1);
+
+            //法线
+            const n2 = normalOnConeAtOrigin(p2);
+            const n3 = normalOnConeAtOrigin(p3);
+            let n0 = vec3.create();
+            let n1 = vec3.create();
+            if (h0 == 0) {
+                n0 = n3;
+                n1 = n2;
+            } else {
+                n0 = normalOnConeAtOrigin(p0);
+                n1 = normalOnConeAtOrigin(p1);
+            }
+
+            //坐标
+            const c0 = [i * 1.0 / hseg, j * 1.0 / hseg];
+            const c1 = [(i + 1) * 1.0 / hseg, j * 1.0 / hseg];
+            const c2 = [(i + 1) * 1.0 / hseg, (j + 1) * 1.0 / hseg];
+            const c3 = [i * 1.0 / hseg, (j + 1) * 1.0 / hseg];
+
+            positions.push(...p0, ...p2, ...p3);
+            positions.push(...p0, ...p1, ...p2);
+            normals.push(...n0, ...n2, ...n3);
+            normals.push(...n0, ...n1, ...n2);
+            texcoords.push(...c0, ...c2, ...c3);
+            texcoords.push(...c0, ...c1, ...c2);
+        }
+    }
+
+    //底面
+    for (let i = 0; i < hseg; ++i) {
+        const a0 = d_a * i;
+        const a1 = d_a * (i + 1);
+        const p0 = pointAtConeCircle(a0, height, radius);
+        const p1 = pointAtConeCircle(a1, height, radius);
+        const p2 = [0, 0, height];
+        const n0 = [0, 0, 1];
+        const n1 = [0, 0, 1];
+        const n2 = [0, 0, 1];
+        const c0 = [i * 1.0 / hseg, 0];
+        const c1 = [(i + 1) * 1.0 / hseg, 0];
+        positions.push(...p0, ...p1, ...p2);
+        normals.push(...n0, ...n1, ...n2);
+        texcoords.push(...c0, ...c1, ...c1);
+    }
+
+    return {
+        hasIndices: false,
+        nvertices: positions.length / 3,
+        verticeSize: 3,
+        vertices: new Float32Array(positions),
+        normals: new Float32Array(normals),
+        texcoords: new Float32Array(texcoords)
+    }
+
+}
+
+

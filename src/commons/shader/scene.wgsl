@@ -1,4 +1,3 @@
-//begin scene.wgsl
 struct PointLight {
     position: vec3f,
     color: vec4f
@@ -43,9 +42,7 @@ struct SceneUniform {
     projection: Projection,
     viewport: Viewport,
     numLights: u32,
-    lights: array<PointLight, 16u>,
+    lights: array<PointLight, 1u>,
 };
 
 @group(0) @binding(0) var<uniform> scene : SceneUniform;
-
-//end scene.wgsl

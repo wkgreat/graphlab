@@ -1252,6 +1252,11 @@
   resolved "https://registry.npmjs.org/@tweakpane/core/-/core-2.0.5.tgz#bae776cd530b31f5e5424641411d4b20c3baed8e"
   integrity sha512-punBgD5rKCF5vcNo6BsSOXiDR/NSs9VM7SG65QSLJIxfRaGgj54ree9zQW6bO3pNFf3AogiGgaNODUVQRk9YqQ==
 
+"@tweakpane/plugin-essentials@^0.2.1":
+  version "0.2.1"
+  resolved "https://registry.npmjs.org/@tweakpane/plugin-essentials/-/plugin-essentials-0.2.1.tgz#9fb7981c00b67c76ac36915a32368ff48ecb2f7a"
+  integrity sha512-VbFU1/uD+CJNFQdfLXUOLjeG5HyUZH97Ox9CxmyVetg1hqjVun3C83HAGFULyhKzl8tSgii8jr304r8QpdHwzQ==
+
 "@types/babel__core@^7.20.5":
   version "7.20.5"
   resolved "https://registry.npmmirror.com/@types/babel__core/-/babel__core-7.20.5.tgz#3df15f27ba85319caa07ba08d0721889bb39c017"
@@ -2490,6 +2495,11 @@ vite-hot-client@^2.1.0:
   version "2.1.0"
   resolved "https://registry.npmjs.org/vite-hot-client/-/vite-hot-client-2.1.0.tgz#88f8469875e0121eae2f460cbf35cb528c049961"
   integrity sha512-7SpgZmU7R+dDnSmvXE1mfDtnHLHQSisdySVR7lO8ceAXvM0otZeuQQ6C8LrS5d/aYyP/QZ0hI0L+dIPrm4YlFQ==
+
+vite-plugin-glsl@^1.5.5:
+  version "1.5.5"
+  resolved "https://registry.npmjs.org/vite-plugin-glsl/-/vite-plugin-glsl-1.5.5.tgz#6316d733c96ecf98f3d05f8a0188bbb5d5d3e31f"
+  integrity sha512-6NM2P4JkM+1hNSqMhM4eagX03bmhEoTyrOrk68y3Q6KXfdF73QIuCb6BmRZvwLPgXTCOBM3Zc8gL1WxctYnrUQ==
 
 vite-plugin-inspect@^11.3.3:
   version "11.3.3"

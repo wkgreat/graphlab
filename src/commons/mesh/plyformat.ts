@@ -1,5 +1,5 @@
 import { objectNumKeys } from "../utils";
-import { Mesh } from "./mesh";
+import Mesh from "./mesh";
 
 export default class PLYMeshData {
 

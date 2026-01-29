@@ -1,3 +1,4 @@
+import * as EssentialsPlugin from '@tweakpane/plugin-essentials';
 import { Pane } from 'tweakpane';
 import Camera, { CameraMouseControl } from '../../commons/camera';
 import { Ground } from '../../commons/objects';
@@ -12,10 +13,13 @@ import bunnyRes3URL from '/data/mesh/bun_zipper_res3.ply?url';
 import bunnyRes4URL from '/data/mesh/bun_zipper_res4.ply?url';
 
 import { mat4, vec3 } from 'gl-matrix';
-import { Mesh, MeshRenderSpace, MeshSelectMode } from '../../commons/mesh/mesh';
-import PLYMeshData from '../../commons/mesh/plyformat';
-import Scene from '../../commons/scene';
 import PointLight from '../../commons/light';
+import Axis from '../../commons/mesh/axis';
+import Mesh, { MeshSelectMode } from '../../commons/mesh/mesh';
+import { RenderSpace } from '../../commons/mesh/object';
+import PLYMeshData from '../../commons/mesh/plyformat';
+import type SimpleLine from '../../commons/mesh/simpleline';
+import Scene from '../../commons/scene';
 
 class MeshDemo {
 
@@ -43,9 +47,13 @@ class MeshDemo {
 
     resizeObserver: ResizeObserver | null = null;
 
-    ground: Ground = new Ground(1000, 1000);
+    ground: Ground | null = null;
 
     meshes: Mesh[] = [];
+
+    axis: Axis | null = null;
+
+    normalLine: SimpleLine | null = null;
 
     pane: Pane;
 
@@ -57,7 +65,7 @@ class MeshDemo {
             color: { r: 0, g: 0, b: 0, a: 0.1 }
         },
         lighting: false,
-        meshurl: bunnyURL,
+        mesh: "bunny",
         selectMode: MeshSelectMode.VERTEX,
         nring: 1
     }
@@ -103,13 +111,22 @@ class MeshDemo {
             this.scene = new Scene(this.camera, this.projection);
             this.scene.addLight(new PointLight([500, -500, 500], [1, 1, 1, 0.5]));
             this.scene.initWebGPU(this.gpuInfo, this.canvasInfo);
+            this.scene.refreshViewport(this.canvasInfo.canvas.width, this.canvasInfo.canvas.height);
 
             this.cameraMouseCtrl = new CameraMouseControl(this.camera, this.canvasInfo.canvas);
 
             this.cameraMouseCtrl.enable();
 
             //objects
+            this.ground = new Ground(1000, 1000);
             this.ground.initWebGPU(this.gpuInfo, this.canvasInfo);
+
+            this.axis = new Axis({
+                xlim: [0, 500],
+                ylim: [0, 500],
+                zlim: [0, 500],
+            });
+            this.axis.initWebGPU(this.gpuInfo, this.canvasInfo, this.scene);
 
             this.resizeObserver = new ResizeObserver(entries => {
                 for (const entry of entries) {
@@ -140,6 +157,7 @@ class MeshDemo {
                 title: '参数控制',
                 expanded: true, // 默认展开
             });
+            this.pane.registerPlugin(EssentialsPlugin);
 
             this.setPane();
 
@@ -163,47 +181,11 @@ class MeshDemo {
         return [x, y];
     }
 
-    loadMesh(url: string) {
+    loadMesh(meshinfo: MeshInfo) {
         if (this.ready) {
-            PLYMeshData.loadFromURL(url).then(data => {
+            PLYMeshData.loadFromURL(meshinfo.url).then(data => {
                 const mesh = data.toMesh();
-
-                mesh.createHalfEdge();
-                mesh.halfedge.addFaceSelectCallback((faces) => {
-                    const contentdiv = document.getElementById("content-div");
-                    if (faces.length === 0) {
-                        contentdiv.innerText = "";
-                    } else {
-                        const face = faces[0];
-                        const vertices = face.face.vertices;
-                        const text = `
-                            当前选中的Face: 
-                            Face编号: ${face.ref}
-                            Vertiecs: ${vertices[0]},${vertices[1]},${vertices[2]}
-                        `
-                        contentdiv.innerText = text;
-                    }
-
-                });
-                mesh.halfedge.addVertexSelectCallback((vertices) => {
-                    const contentdiv = document.getElementById("content-div");
-                    if (vertices.length === 0) {
-                        contentdiv.innerText = "";
-                    } else {
-                        const vertex = vertices[0];
-                        const text = `
-                            当前选中的Vertex: 
-                            Vertex编号: ${vertex.ref}
-                            关联HalfEdge编号: ${vertex.vertex.halfedge}
-                        `
-                        contentdiv.innerText = text;
-                    }
-                })
-
-                const matrix = mat4.create();
-                mat4.rotateX(matrix, matrix, Math.PI / 2);
-                mat4.scale(matrix, matrix, vec3.fromValues(1000, 1000, 1000));
-                mesh.setModelMatrix(matrix);
+                mesh.setModelMatrix(meshinfo.modelmtx);
                 mesh.lighting = this.paneParams.lighting;
                 mesh.wireframe = this.paneParams.wireframe.enable;
                 const wireframeColor = this.paneParams.wireframe.color;
@@ -220,8 +202,43 @@ class MeshDemo {
                         depthBias: 1,
                         depthBiasSlopeScale: 1
                     },
-                    space: MeshRenderSpace.WORLD
+                    frontFace: meshinfo.frontFace,
+                    space: RenderSpace.WORLD
                 });
+
+                mesh.createHalfEdge();
+                mesh.halfedge.addVertexSelectCallback((vertices) => {
+                    const contentdiv = document.getElementById("content-div");
+                    if (vertices.length === 0) {
+                        contentdiv.innerText = "";
+                    } else {
+                        const vertex = vertices[0];
+                        const text = `
+                            当前选中的Vertex: 
+                            Vertex编号: ${vertex.ref}
+                            关联HalfEdge编号: ${vertex.vertex.halfedge}
+                        `
+                        contentdiv.innerText = text;
+                    }
+                })
+                mesh.halfedge.addFaceSelectCallback((faces) => {
+                    const contentdiv = document.getElementById("content-div");
+                    if (faces.length === 0) {
+                        contentdiv.innerText = "";
+                    } else {
+                        const face = faces[0];
+                        const vertices = face.face.vertices;
+                        const text = `
+                            当前选中的Face: 
+                            Face编号: ${face.ref}
+                            Vertiecs: ${vertices[0]},${vertices[1]},${vertices[2]}
+                        `
+                        contentdiv.innerText = text;
+                    }
+
+                });
+                mesh.halfedge.renderMeanCurvature();
+
                 this.meshes.push(mesh);
             });
         }
@@ -234,7 +251,7 @@ class MeshDemo {
                 depthBias: 0,
                 depthBiasSlopeScale: 0
             },
-            space: MeshRenderSpace.WORLD
+            space: RenderSpace.WORLD
         });
         this.meshes.push(mesh);
 
@@ -278,7 +295,13 @@ class MeshDemo {
             const pass = encoder.beginRenderPass(this.getRenderPassDescriptor());
             this.firstpass = false;
 
-            this.ground.draw(this.gpuInfo, this.camera, this.projection, pass);
+            if (this.ground) {
+                this.ground.draw(this.gpuInfo, this.camera, this.projection, pass);
+            }
+
+            if (this.axis) {
+                this.axis.draw(pass);
+            }
 
             for (const mesh of this.meshes) {
                 mesh.wireframe = false;
@@ -300,6 +323,10 @@ class MeshDemo {
                         }
                     })
                 }
+            }
+
+            if (this.normalLine) {
+                this.normalLine.draw(pass);
             }
 
             pass.end();
@@ -370,17 +397,26 @@ class MeshDemo {
             }
         })
 
-        meshFolder.addBinding(this.paneParams, 'meshurl', {
+        const meshOptions = {};
+        for (const key of Object.keys(MeshSources)) {
+            meshOptions[key] = key;
+        }
+
+        meshFolder.addBinding(this.paneParams, 'mesh', {
             label: "Mesh",
-            options: {
-                ...MeshSources
-            }
+            options: meshOptions
         }).on("change", (e) => {
             while (this.meshes.length > 0) {
                 const m = this.meshes.pop();
                 m.destroy();
             }
-            this.loadMesh(e.value);
+            if (this.normalLine) {
+                this.normalLine.destroy();
+                this.normalLine = null;
+            }
+            const key = e.value;
+            const meshInfo = MeshSources[key];
+            this.loadMesh(meshInfo);
         })
 
         meshFolder.addBinding(this.paneParams, 'selectMode', {
@@ -408,13 +444,27 @@ class MeshDemo {
             }
         });
 
-        meshFolder.addButton({
-            title: "生成法向量"
-        }).on("click", () => {
-            for (const mesh of this.meshes) {
-                if (mesh.halfedge) {
-                    mesh.halfedge.computeNormals();
+        const normalBlade = meshFolder.addBlade({
+            view: 'buttongrid',
+            size: [2, 1],
+            cells: (x, y) => ({
+                title: ['生成法向量', '清除法向量'][x],
+            }),
+        });
+        (normalBlade as any).on("click", (ev) => {
+            if (ev.index[0] === 0) {
+                for (const mesh of this.meshes) {
+                    if (mesh.halfedge) {
+                        mesh.halfedge.computeNormals();
+                        this.normalLine = mesh.createNormalLine(1);
+                        this.normalLine.initWebGPU(this.gpuInfo, this.canvasInfo, this.scene);
+                    }
                 }
+            } else {
+                if (this.normalLine) {
+                    this.normalLine.destroy();
+                }
+                this.normalLine = null;
             }
         });
 
@@ -449,11 +499,37 @@ class MeshDemo {
 
 }
 
-const MeshSources = {
-    bunny: bunnyURL,
-    bunny_res2: bunnyRes2URL,
-    bunny_res3: bunnyRes3URL,
-    bunny_res4: bunnyRes4URL
+interface MeshInfo {
+    url: string;
+    frontFace: GPUFrontFace,
+    modelmtx: mat4
+}
+
+const bunnyMatrix = mat4.create();
+mat4.rotateX(bunnyMatrix, bunnyMatrix, Math.PI / 2);
+mat4.scale(bunnyMatrix, bunnyMatrix, vec3.fromValues(1000, 1000, 1000));
+
+const MeshSources: { [key: string]: MeshInfo } = {
+    bunny: {
+        url: bunnyURL,
+        frontFace: 'cw',
+        modelmtx: bunnyMatrix
+    },
+    bunny_res2: {
+        url: bunnyRes2URL,
+        frontFace: 'cw',
+        modelmtx: bunnyMatrix
+    },
+    bunny_res3: {
+        url: bunnyRes3URL,
+        frontFace: 'cw',
+        modelmtx: bunnyMatrix
+    },
+    bunny_res4: {
+        url: bunnyRes4URL,
+        frontFace: 'cw',
+        modelmtx: bunnyMatrix
+    }
 }
 
 function main() {
@@ -461,17 +537,9 @@ function main() {
     const demo = new MeshDemo();
 
     demo.onReady(() => {
-        demo.loadMesh(demo.paneParams.meshurl);
 
-        // const sphere = createSphere(5, 10, 10, [0, 0, 0]);
-        // const sphereMesh = new Mesh();
-        // sphereMesh.positions = sphere.vertices;
-        // sphereMesh.normals = sphere.normals;
-        // sphereMesh.texcoords = sphere.texcoords;
-        // sphereMesh.setModelMatrix(mat4.create());
-
-        // demo.addMesh(sphereMesh);
-
+        const meshInfo = MeshSources[demo.paneParams.mesh];
+        demo.loadMesh(meshInfo);
         demo.draw();
     });
 }

@@ -24,6 +24,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@tweakpane/core": "^2.0.5",
+    "@tweakpane/plugin-essentials": "^0.2.1",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
@@ -37,6 +38,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
+    "vite-plugin-glsl": "^1.5.5",
     "vite-plugin-inspect": "^11.3.3"
   }
 }
