@@ -5,6 +5,7 @@ import { MeshSelectMode } from "./mesh";
 import { RenderSpace } from "./object";
 import Color, { ColorRamp, Colors } from "../color";
 import { vec4t3 } from "../matrix";
+import { clamp } from "../utils";
 
 export type HalfEdgeRef = string;
 
@@ -326,9 +327,9 @@ export default class HalfEdgeInfo {
             if (this.mesh.selectVertexNRing === 0) {
                 ;
             } else if (this.mesh.selectVertexNRing === 1) {
-                const faces = this.getVertexOneRingFaces(this.vertexList[minRef]);
+                const oneRing = this.getVertexOneRingFaces(this.vertexList[minRef]);
 
-                const triangles = faces.map(face => {
+                const triangles = oneRing.faces.map(face => {
 
                     const points = face.vertices.map(v => {
                         const posidx = this.vertexList[v].position;
@@ -367,13 +368,18 @@ export default class HalfEdgeInfo {
         }
     }
 
-    getVertexOneRingFaces(vertex: HalfEdgeVertex): HalfEdgeFace[] {
+    getVertexOneRingFaces(vertex: HalfEdgeVertex): {
+        boundary: boolean
+        faces: HalfEdgeFace[]
+    } {
 
         const faces: HalfEdgeFace[] = [];
 
         const heRef = vertex.halfedge;
         let he = this.halfedgeMap.get(heRef);
         const startHeRef = heRef;
+
+        let boundary = false;
 
         while (he) {
 
@@ -382,21 +388,27 @@ export default class HalfEdgeInfo {
             }
             if (!he.opposite) {
                 console.log("HE: opposite is null");
+                boundary = true;
                 break;
             }
             const opp = this.halfedgeMap.get(he.opposite);
             if (!opp) {
                 console.log("getVertexOneRing, opp is null!");
+                boundary = true;
                 break;
             }
             const nextHeRef = opp.next;
             he = this.halfedgeMap.get(nextHeRef);
             if (nextHeRef === startHeRef) {
+                boundary = false;
                 break;
             }
         }
 
-        return faces;
+        return {
+            boundary,
+            faces
+        };
 
     }
 
@@ -493,9 +505,9 @@ export default class HalfEdgeInfo {
     computeNormals() {
         const normalData = new Float32Array(this.mesh.vertexCount * 3);
         for (const vertex of this.vertexList) {
-            const faces = this.getVertexOneRingFaces(vertex);
+            const oneRing = this.getVertexOneRingFaces(vertex);
             const faceNormals = [];
-            for (const face of faces) {
+            for (const face of oneRing.faces) {
                 faceNormals.push(this.computeFaceNormal(face));
             }
             const normal = vec3.fromValues(0, 0, 0);
@@ -515,9 +527,9 @@ export default class HalfEdgeInfo {
     }
 
     computeAveragingRegionArea(vertex: HalfEdgeVertex): number {
-        const oneRingFaces = this.getVertexOneRingFaces(vertex);
+        const oneRing = this.getVertexOneRingFaces(vertex);
         let regionArea = 0;
-        for (const face of oneRingFaces) {
+        for (const face of oneRing.faces) {
             const triangle = this.faceToTriangle(face);
             const idx = this.faceVertexIdx(vertex, face);
             if (idx === -1) {
@@ -599,7 +611,42 @@ export default class HalfEdgeInfo {
         this.mesh.setColors(colors);
     }
 
-    computeGaussianCurvature() {}
+    computeGaussianCurvature(vertex: HalfEdgeVertex) {
+
+        const area = this.computeAveragingRegionArea(vertex);
+
+        const oneRing = this.getVertexOneRingFaces(vertex);
+
+        let s = 0;
+
+        if (oneRing.boundary) {
+            return NaN;
+        }
+
+        for (const face of oneRing.faces) {
+
+            const idx = this.faceVertexIdx(vertex, face);
+            const triangle = this.faceToTriangle(face);
+            s += triangle.computeRadians(idx);
+        }
+
+        if (area === 0) {
+            return NaN;
+        }
+
+        return (Math.PI * 2 - s) / area;
+
+    }
+
+    renderGaussianCurvature() {
+        const curvatures = this.vertexList.map(v => this.computeGaussianCurvature(v)).map(c => isNaN(c) ? 0 : clamp(c, -100000, 100000));
+        const minCurvature = curvatures.filter(c => !isNaN(c)).reduce((a, b) => a < b ? a : b);
+        const maxCurvature = curvatures.filter(c => !isNaN(c)).reduce((a, b) => a > b ? a : b);
+        let weights = curvatures.map(c => isNaN(c) ? 0 : (c - minCurvature) / (maxCurvature - minCurvature));
+        weights = weights.map(w => Math.pow(w, 2));
+        const colors = weights.map(w => Color.interpolate(ColorRamp.COOLWARN, w).toArray());
+        this.mesh.setColors(colors);
+    }
 
     computePrincipalCuvature() {}
 

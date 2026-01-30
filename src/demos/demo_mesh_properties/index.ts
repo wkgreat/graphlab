@@ -487,6 +487,16 @@ class MeshDemo {
                 }
             }
         });
+
+        meshFolder.addButton({
+            title: "计算高斯曲率"
+        }).on("click", () => {
+            for (const mesh of this.meshes) {
+                if (mesh.halfedge) {
+                    mesh.halfedge.renderGaussianCurvature();
+                }
+            }
+        });
     }
 
     onReady(f: (MeshDemo) => void) {
