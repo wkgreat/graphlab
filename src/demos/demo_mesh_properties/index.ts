@@ -478,22 +478,31 @@ class MeshDemo {
             }
         });
 
-        meshFolder.addButton({
-            title: "计算平均曲率"
-        }).on("click", () => {
-            for (const mesh of this.meshes) {
-                if (mesh.halfedge) {
-                    mesh.halfedge.renderMeanCurvature();
-                }
-            }
+        const curvatureBlade = meshFolder.addBlade({
+            view: 'buttongrid',
+            size: [2, 2],
+            cells: (x, y) => ({
+                title: [
+                    ['平均曲率', '高斯曲率'],
+                    ['主曲率1', '主曲率2'],
+                ][y][x],
+            }),
         });
-
-        meshFolder.addButton({
-            title: "计算高斯曲率"
-        }).on("click", () => {
+        (curvatureBlade as any).on("click", (ev) => {
+            const [x, y] = ev.index;
+            const funcs = [
+                [
+                    (mesh: Mesh) => { console.log("平均曲率"); mesh.halfedge.renderMeanCurvature() },
+                    (mesh: Mesh) => { console.log("高斯曲率"); mesh.halfedge.renderGaussianCurvature() },
+                ],
+                [
+                    (mesh: Mesh) => { console.log("主曲率1"); mesh.halfedge.renderPrincipalCurvature(0) },
+                    (mesh: Mesh) => { console.log("主曲率2"); mesh.halfedge.renderPrincipalCurvature(1) },
+                ]
+            ];
             for (const mesh of this.meshes) {
                 if (mesh.halfedge) {
-                    mesh.halfedge.renderGaussianCurvature();
+                    funcs[y][x](mesh);
                 }
             }
         });

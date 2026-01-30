@@ -6,6 +6,7 @@ import { RenderSpace } from "./object";
 import Color, { ColorRamp, Colors } from "../color";
 import { vec4t3 } from "../matrix";
 import { clamp } from "../utils";
+import type { NumArr2 } from "../defines";
 
 export type HalfEdgeRef = string;
 
@@ -387,13 +388,13 @@ export default class HalfEdgeInfo {
                 faces.push(this.faceList[he.face]);
             }
             if (!he.opposite) {
-                console.log("HE: opposite is null");
+                // console.log("HE: opposite is null");
                 boundary = true;
                 break;
             }
             const opp = this.halfedgeMap.get(he.opposite);
             if (!opp) {
-                console.log("getVertexOneRing, opp is null!");
+                // console.log("getVertexOneRing, opp is null!");
                 boundary = true;
                 break;
             }
@@ -533,7 +534,7 @@ export default class HalfEdgeInfo {
             const triangle = this.faceToTriangle(face);
             const idx = this.faceVertexIdx(vertex, face);
             if (idx === -1) {
-                console.log("faceVertexIdx is -1");
+                // console.log("faceVertexIdx is -1");
                 continue;
             }
             regionArea += triangle.computeBarycentricCellArea(idx);
@@ -551,7 +552,7 @@ export default class HalfEdgeInfo {
             const edge = this.halfedgeMap.get(edgeRef);
             const opp = this.halfedgeMap.get(edge.opposite);
             if (!opp) {
-                console.log("computeContagentLaplace vert opp is null!");
+                // console.log("computeContagentLaplace vert opp is null!");
                 continue;
             }
             const face0 = this.faceList[edge.face];
@@ -584,7 +585,7 @@ export default class HalfEdgeInfo {
             return 0;
         }
         if (isNaN(mag)) {
-            console.warn("laplace mag is NaN");
+            // console.warn("laplace mag is NaN");
             return 0;
         }
         return 0.5 * mag;
@@ -648,6 +649,21 @@ export default class HalfEdgeInfo {
         this.mesh.setColors(colors);
     }
 
-    computePrincipalCuvature() {}
+    computePrincipalCurvatures(vertex: HalfEdgeVertex): NumArr2 {
+        const H = this.computeMeanCurvature(vertex);
+        const K = this.computeGaussianCurvature(vertex);
+        const c0 = H - Math.sqrt(Math.pow(H, 2) - K);
+        const c1 = H + Math.sqrt(Math.pow(H, 2) - K);
+        return [c0, c1]
+    }
+
+    renderPrincipalCurvature(idx: 0 | 1) {
+        const curvatures = this.vertexList.map(v => this.computePrincipalCurvatures(v)[idx]);
+        const minCurvature = curvatures.filter(c => !isNaN(c)).reduce((a, b) => a < b ? a : b);
+        const maxCurvature = curvatures.filter(c => !isNaN(c)).reduce((a, b) => a > b ? a : b);
+        const weights = curvatures.map(c => isNaN(c) ? 0 : (c - minCurvature) / (maxCurvature - minCurvature));
+        const colors = weights.map(w => Color.interpolate(ColorRamp.COOLWARN, w).toArray());
+        this.mesh.setColors(colors);
+    }
 
 }
