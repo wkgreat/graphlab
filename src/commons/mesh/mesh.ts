@@ -374,6 +374,7 @@ export default class Mesh extends RenderObject {
         });
 
         const bindGroupLayout = device.createBindGroupLayout({
+            label: this.label,
             entries: [
                 {
                     binding: 0,

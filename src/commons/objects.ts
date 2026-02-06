@@ -1,10 +1,10 @@
+import { vec3 } from "gl-matrix";
 import { createBuffersAndAttributesFromArrays, makeShaderDataDefinitions, makeStructuredView, type BuffersAndAttributes, type ShaderDataDefinitions } from "webgpu-utils";
 import type Camera from "./camera";
 import type { NumArr3, NumArr4 } from "./defines";
 import type Projection from "./projection";
 import { createCheckerBoardTexture } from "./texture";
 import type { CanvasGPUInfo, GPUInfo } from "./webgpuUtils";
-import { mat4, vec3, vec4 } from "gl-matrix";
 
 interface RayCrossTriangleResult {
     cross: boolean,
@@ -179,6 +179,11 @@ export class Ray {
     }
 }
 
+export interface GroundOptions {
+    xsize: number;
+    ysize: number;
+    density: number;
+}
 
 export class Ground {
 
@@ -210,6 +215,7 @@ export class Ground {
 
     definition: ShaderDataDefinitions | null = null;
     sceneUniform: GPUBuffer | null = null;
+    groundUniform: GPUBuffer | null = null;
     vertexBuffer: BuffersAndAttributes | null = null;
     indexBuffer: GPUBuffer | null = null;
     module: GPUShaderModule | null = null;
@@ -217,7 +223,11 @@ export class Ground {
     texture: GPUTexture | null = null;
     sampler: GPUSampler | null = null;
 
-    constructor(xsize: number = 100, ysize: number = 100) {
+    density: number;
+
+    constructor(options: GroundOptions) {
+        const { xsize, ysize, density } = options;
+        this.density = density;
         const hx = xsize / 2;
         const hy = ysize / 2;
         for (let i = 0; i < this.positions.length; ++i) {
@@ -273,18 +283,30 @@ export class Ground {
             return;
         }
 
-        const view = makeStructuredView(this.definition.uniforms.scene);
-        view.set({
+        const sceneView = makeStructuredView(this.definition.uniforms.scene);
+        sceneView.set({
             viewmtx: camera.viewMtx,
             projmtx: projection.perspectiveMatrixZO
         });
-        if (!this.sceneUniform) {
+        if (this.sceneUniform == null) {
             this.sceneUniform = device.createBuffer({
-                size: view.arrayBuffer.byteLength,
+                size: sceneView.arrayBuffer.byteLength,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
             });
         }
-        device.queue.writeBuffer(this.sceneUniform, 0, view.arrayBuffer);
+        device.queue.writeBuffer(this.sceneUniform, 0, sceneView.arrayBuffer);
+
+        const groundView = makeStructuredView(this.definition.uniforms.ground);
+        groundView.set({
+            density: this.density
+        });
+        if (this.groundUniform == null) {
+            this.groundUniform = device.createBuffer({
+                size: groundView.arrayBuffer.byteLength,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+            });
+        }
+        device.queue.writeBuffer(this.groundUniform, 0, groundView.arrayBuffer);
     }
 
     initWebGPU(gpuinfo: GPUInfo, canvasinfo: CanvasGPUInfo) {
@@ -299,10 +321,15 @@ export class Ground {
             projmtx: mat4x4f
         }
 
+        struct GroundUniform {
+            density: f32
+        }
+
         @group(0) @binding(0) var<uniform> scene: SceneUniform;
 
         @group(1) @binding(0) var theTexture: texture_2d<f32>;
         @group(1) @binding(1) var theSampler: sampler;
+        @group(1) @binding(2) var<uniform> ground: GroundUniform;
         
         struct VSInput {
             @location(0) position: vec3f,
@@ -330,7 +357,7 @@ export class Ground {
         }
         @fragment fn fs(input: VSOutput) -> @location(0) vec4f {
 
-            var color = textureSample(theTexture, theSampler, input.texcoord);
+            var color = textureSample(theTexture, theSampler, input.texcoord * ground.density);
 
             return color;
         }
@@ -379,7 +406,7 @@ export class Ground {
             label: "Ground",
             layout: this.pipeline.getBindGroupLayout(0),
             entries: [
-                { binding: 0, resource: { buffer: this.sceneUniform! } }
+                { binding: 0, resource: { buffer: this.sceneUniform } }
             ]
         });
 
@@ -388,7 +415,8 @@ export class Ground {
             layout: this.pipeline.getBindGroupLayout(1),
             entries: [
                 { binding: 0, resource: this.texture },
-                { binding: 1, resource: this.sampler }
+                { binding: 1, resource: this.sampler },
+                { binding: 2, resource: { buffer: this.groundUniform } }
             ]
         });
 

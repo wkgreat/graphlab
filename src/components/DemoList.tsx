@@ -13,6 +13,8 @@ const Content = (props) => {
                 <Box className="DemoOption" key={d.name} onClick={() => {
                     const frame = document.getElementById('demo-frame');
                     frame.setAttribute('src', d.url);
+                }} onDoubleClick={() => {
+                    window.open(d.url, "_blank");
                 }}>
                     <Box className='DemoOptionName'>{d.name}</Box>
                     <Box className='DemoOptionDescription'>{d.description}</Box>

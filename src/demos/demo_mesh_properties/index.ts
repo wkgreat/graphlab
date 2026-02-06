@@ -118,7 +118,11 @@ class MeshDemo {
             this.cameraMouseCtrl.enable();
 
             //objects
-            this.ground = new Ground(1000, 1000);
+            this.ground = new Ground({
+                xsize: 1000,
+                ysize: 1000,
+                density: 1.0
+            });
             this.ground.initWebGPU(this.gpuInfo, this.canvasInfo);
 
             this.axis = new Axis({

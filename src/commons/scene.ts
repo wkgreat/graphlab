@@ -15,7 +15,7 @@ export default class Scene {
     #width: number = 0;
     #height: number = 0;
     lights: PointLight[] = [];
-    #MAX_NUM_LIGHTS = 16;
+    readonly MAX_NUM_LIGHTS = 16;
 
     #webgpu: {
         gpuinfo?: GPUInfo,
@@ -126,7 +126,7 @@ export default class Scene {
                 viewportmtxInv: this.viewportMatrixInv
             }
 
-            const nLights = Math.min(this.#MAX_NUM_LIGHTS, this.lights.length);
+            const nLights = Math.min(this.MAX_NUM_LIGHTS, this.lights.length);
             const lightData = [];
             for (let i = 0; i < nLights; ++i) {
                 lightData.push({
@@ -156,6 +156,7 @@ export default class Scene {
 
             if (!this.#webgpu.layout) {
                 this.#webgpu.layout = device.createBindGroupLayout({
+                    label: "scene",
                     entries: [
                         {
                             binding: 0,

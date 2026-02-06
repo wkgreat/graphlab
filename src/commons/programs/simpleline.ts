@@ -81,6 +81,7 @@ export default class SimpleLineProgram {
         });
 
         this.sceneBindGroupLayout = this.gpuinfo.device.createBindGroupLayout({
+            label: this.label,
             entries: [
                 {
                     binding: 0,

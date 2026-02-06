@@ -1,7 +1,4 @@
-struct PointLight {
-    position: vec3f,
-    color: vec4f
-};
+#include ./light.wgsl
 
 struct BlinnPhong {
     ka: f32,
@@ -42,7 +39,7 @@ struct SceneUniform {
     projection: Projection,
     viewport: Viewport,
     numLights: u32,
-    lights: array<PointLight, 1u>,
+    lights: array<PointLight, 32u>,
 };
 
 @group(0) @binding(0) var<uniform> scene : SceneUniform;

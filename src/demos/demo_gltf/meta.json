@@ -1,0 +1,7 @@
+{
+    "external": false,
+    "url": "",
+    "html": "index.html",
+    "name": "glTF模型加载与可视化",
+    "description": "解析并加载glTF格式模型，并基于WebGPU可视化"
+}
