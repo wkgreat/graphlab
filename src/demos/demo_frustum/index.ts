@@ -32,7 +32,11 @@ class FrustumDemo {
 
     resizeObserver: ResizeObserver | null = null;
 
-    ground: Ground = new Ground(1000, 1000);
+    ground: Ground = new Ground({
+        xsize: 1000,
+        ysize: 1000,
+        density: 1
+    });
 
     frustum: Frustum | null = null;
 
