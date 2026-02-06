@@ -1,4 +1,4 @@
-import"./modulepreload-polyfill-B5Qt9EMX.js";import{m as U,a as P}from"./webgpu-utils.module-DPkR54bZ.js";async function V(a={}){const e=navigator.gpu,o=await e.requestAdapter();if(o===null)return null;const n=await o?.requestDevice();return n===null?null:{gpu:e,adaptor:o,device:n}}function q(a){const e=document.getElementById(a.canvasId);if(e===null)return null;const o=e.getContext("webgpu");return o===null?null:(o.configure(a.config),{canvas:e,context:o})}async function D(){const a=`
+import"./modulepreload-polyfill-B5Qt9EMX.js";import{m as U,a as P}from"./webgpu-utils.module--9rjYVl9.js";async function V(a={}){const e=navigator.gpu,o=await e.requestAdapter();if(o===null)return null;const n=await o?.requestDevice();return n===null?null:{gpu:e,adaptor:o,device:n}}function q(a){const e=document.getElementById(a.canvasId);if(e===null)return null;const o=e.getContext("webgpu");return o===null?null:(o.configure(a.config),{canvas:e,context:o})}async function D(){const a=`
 
     struct Viewport {
         width: f32,
