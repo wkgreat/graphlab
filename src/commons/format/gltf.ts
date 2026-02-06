@@ -527,6 +527,18 @@ export class GLTFMaterial {
         }
     }
 
+    getAlphaMode(): TGLTF.MaterialAlphaMode {
+        return this.#alphaMode;
+    }
+
+    getAlphaCutoff(): number {
+        return this.#alphaCutoff;
+    }
+
+    getDoubleSided(): boolean {
+        return this.#doubleSided;
+    }
+
     hasBaseColorTexture(): boolean {
         return !!this.#pbr.baseColorTexture;
     }

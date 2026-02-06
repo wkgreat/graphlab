@@ -114,8 +114,8 @@ class GLTFPipeline {
             normalTexture: material.hasNormalTexture(),
             emmissiveTexture: material.hasEmissiveTexture(),
             occlusionTexture: material.hasOcclusionTexture(),
-            alphaMode: material.alphaMode,
-            doubleSided: material.doubleSided,
+            alphaMode: material.getAlphaMode(),
+            doubleSided: material.getDoubleSided(),
         }
 
         return options;
