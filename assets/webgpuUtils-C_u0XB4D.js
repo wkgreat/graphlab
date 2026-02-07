@@ -1,0 +1,1 @@
+async function a(e={}){const t=navigator.gpu,n=await t.requestAdapter();if(n===null)return null;const u=await n?.requestDevice();return u===null?null:{gpu:t,adaptor:n,device:u}}function r(e){const t=document.getElementById(e.canvasId);if(t===null)return null;const n=t.getContext("webgpu");return n===null?null:(n.configure(e.config),{canvas:t,context:n})}export{r as a,a as c};
