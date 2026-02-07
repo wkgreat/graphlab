@@ -335,7 +335,7 @@ function main() {
     demo.onReady(() => {
         demo.draw();
 
-        const gltfSource = GLTFResources.DiffuseTransmissionTeacup;
+        const gltfSource = GLTFResources.DamagedHelmet;
 
         gltfSource.gltf.onReady(() => {
 
