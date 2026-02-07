@@ -14,3 +14,11 @@ export function assertNotNull<T>(
         throw new Error(message);
     }
 }
+
+export function random(a: number, b: number) {
+    return Math.random() * (b - a) + a;
+}
+
+export function randomSign(): number {
+    return Math.sign(Math.random() - 0.5);
+}

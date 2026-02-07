@@ -1,7 +1,7 @@
 import { makeShaderDataDefinitions, makeStructuredView } from "webgpu-utils";
 import type { ChangeCallback, NumArr3, NumArr4 } from "./defines";
 import type { TGLTF } from "./format/gltf";
-import code from './shader/material.wgsl'
+import code from './shader/material.wgsl';
 
 export interface BlinnPhongMaterialOptions {
     ka: number
@@ -234,7 +234,8 @@ export class PbrMaterial {
                 label: "pbrMaterial default sampler",
                 minFilter: 'linear',
                 magFilter: 'linear',
-                mipmapFilter: 'linear',
+                addressModeU: 'repeat',
+                addressModeV: 'repeat'
             });
             PbrMaterial.defaultSampler = defaultSampler;
         }
@@ -290,8 +291,6 @@ export class PbrMaterial {
                 alphaMode: AlphaModeCodes[this.options.alphaMode],
                 alphaCutoff: this.options.alphaCutoff
             };
-
-            console.log(data);
 
             view.set(data);
 

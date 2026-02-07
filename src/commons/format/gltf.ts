@@ -1,11 +1,11 @@
 import { type GLTF as TGLTF } from '@gltf-transform/core';
 import { mat4, quat, vec3 } from "gl-matrix";
+import { createTextureFromSource } from 'webgpu-utils';
 import type { NumArr16, NumArr3, NumArr4 } from '../defines';
+import { PbrMaterial, type PbrMaterialOptions } from '../material';
 import RenderObject, { type RenderObjectOptions } from '../mesh/object';
 import type Scene from '../scene';
 import type { CanvasGPUInfo, GPUInfo } from '../webgpuUtils';
-import { PbrMaterial, type PbrMaterialOptions } from '../material';
-import { createTextureFromSource } from 'webgpu-utils';
 
 export type { GLTF as TGLTF } from '@gltf-transform/core';
 
@@ -108,7 +108,7 @@ export class GLTFPrimitive {
         uniform?: GPUBuffer;
         defaultVec2FloatBuffer?: GPUBuffer;
         defaultVec3FloatBuffer?: GPUBuffer;
-
+        defaultVec4FloatBuffer?: GPUBuffer;
     } = {};
 
     constructor(gltf: GLTF, mesh: GLTFMesh, ref: GLTFRef) {
@@ -229,6 +229,23 @@ export class GLTFPrimitive {
         return Object.fromEntries(entries);
     }
 
+    getDefaultVec4FloatGPUBuffer(device: GPUDevice): GPUBuffer {
+        if (this.webgpu.defaultVec4FloatBuffer != null) {
+            return this.webgpu.defaultVec4FloatBuffer;
+        }
+        const count = this.getVertexCount();
+        const bytes = 4 * 4 * count;
+        const bufferData = new ArrayBuffer(bytes);
+        const buffer = device.createBuffer({
+            label: "primitive default vec4f buffer",
+            size: bytes,
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+        });
+        device.queue.writeBuffer(buffer, 0, bufferData);
+        this.webgpu.defaultVec4FloatBuffer = buffer;
+        return buffer;
+    }
+
     getDefaultVec3FloatGPUBuffer(device: GPUDevice): GPUBuffer {
         if (this.webgpu.defaultVec3FloatBuffer != null) {
             return this.webgpu.defaultVec3FloatBuffer;
@@ -326,8 +343,14 @@ export class GLTFTexutre {
             const bitmap = image.image;
 
             const texture = createTextureFromSource(device, bitmap, {
-                mips: this.needMipmap()
+                mips: this.needMipmap(),
+                format: 'rgba8unorm',
+                size: [bitmap.width, bitmap.height, 1]
             });
+
+            // const texture = createTexture2D(device, bitmap);
+
+            // const texture = createTexture2DFromTypedArray(device, image.data.data, image.data.width, image.data.height);
 
             this.webgpu.texture = texture;
 
@@ -355,6 +378,7 @@ export class GLTFTexutre {
             } else {
                 this.webgpu.sampler = sampler.getGPUSampler(device);
             }
+            return this.webgpu.sampler;
         }
     }
 }
@@ -460,7 +484,8 @@ export class GLTFSampler {
 
     getGPUSampler(device: GPUDevice): GPUSampler {
         if (this.webgpu.sampler == null) {
-            this.webgpu.sampler = device.createSampler(this.getGPUSamplerDescriptor());
+            const descriptor = this.getGPUSamplerDescriptor();
+            this.webgpu.sampler = device.createSampler(descriptor);
         }
         return this.webgpu.sampler;
     }
@@ -504,21 +529,25 @@ export class GLTFMaterial {
             if (pbrJson) {
                 this.#pbr.baseColorTexture = pbrJson.baseColorTexture;
                 this.#pbr.metallicRoughnessTexture = pbrJson.metallicRoughnessTexture;
+                this.#pbr.baseColorFactor = pbrJson.baseColorFactor as NumArr4;
+                this.#pbr.metallicFactor = pbrJson.metallicFactor;
+                this.#pbr.roughnessFactor = pbrJson.roughnessFactor;
             }
             this.#normalTexture = this.#json.normalTexture;
             this.#emissiveTexture = this.#json.emissiveTexture;
             this.#occlusionTexture = this.#json.occlusionTexture;
 
-            if (this.#json.normalTexture.scale != null) {
+            if (this.#json.normalTexture?.scale != null) {
                 this.#normalScale = this.#json.normalTexture.scale;
             }
 
-            if (this.#json.occlusionTexture.strength != null) {
+            if (this.#json.occlusionTexture?.strength != null) {
                 this.#occlusionStrength = this.#json.occlusionTexture.strength;
             }
 
-            if (this.#json.emissiveFactor != null)
+            if (this.#json.emissiveFactor != null) {
                 this.#emissiveFactor = this.#json.emissiveFactor as NumArr3;
+            }
 
             this.#alphaMode = this.#json.alphaMode;
             this.#alphaCutoff = this.#json.alphaCutoff;
@@ -557,11 +586,11 @@ export class GLTFMaterial {
 
     getTexcoordIndexMap() {
         const idxmap: GLTFMaterialTexCoordIndexMap = {
-            baseColor: this.#pbr.baseColorTexture.texCoord,
-            metallicRoughness: this.#pbr.metallicRoughnessTexture.texCoord,
-            normal: this.#normalTexture.texCoord,
-            emmissive: this.#emissiveTexture.texCoord,
-            occlusion: this.#occlusionTexture.texCoord
+            baseColor: this.#pbr.baseColorTexture?.texCoord,
+            metallicRoughness: this.#pbr.metallicRoughnessTexture?.texCoord,
+            normal: this.#normalTexture?.texCoord,
+            emmissive: this.#emissiveTexture?.texCoord,
+            occlusion: this.#occlusionTexture?.texCoord
         }
         return idxmap;
     }
@@ -674,11 +703,18 @@ export const GLTFImageStatus = {
 } as const;
 export type GLTFImageStatus = typeof GLTFImageStatus[keyof typeof GLTFImageStatus];
 
+const GLTFImageFormat = {
+    JPG: 0,
+    PNG: 1
+} as const;
+export type GLTFImageFormat = typeof GLTFImageFormat[keyof typeof GLTFImageFormat];
+
 export class GLTFImage {
     gltf: GLTF
     ref: GLTFRef
     json: TGLTF.IImage
     image: ImageBitmap | null = null;
+    // data: ImageDataInfo | null = null;
     status: GLTFImageStatus = GLTFImageStatus.NONE;
     constructor(gltf: GLTF, ref: GLTFRef, json: TGLTF.IImage) {
         this.gltf = gltf;
@@ -686,7 +722,48 @@ export class GLTFImage {
         this.json = json;
     }
 
-    loadImage() {
+    // async loadImageData() {
+    //     if (this.status !== GLTFImageStatus.NONE) {
+    //         return;
+    //     }
+
+    //     this.status = GLTFImageStatus.LOADING;
+
+    //     let data: ImageDataInfo | null = null;
+    //     if (this.json.uri) {
+    //         let absUri: string = "";
+    //         if (this.json.uri.startsWith("data:")) {
+    //             absUri = this.json.uri;
+    //         } else {
+    //             absUri = `${this.gltf.url}/${this.json.uri}`;
+    //         }
+    //         const res = await fetch(absUri);
+    //         const blob = await res.blob();
+    //         const buffer = await blob.arrayBuffer();
+    //         data = resolveImageData(buffer);
+
+    //     } else if (this.json.bufferView) {
+
+    //         const bufferView = this.gltf.bufferViews[this.json.bufferView];
+    //         if (!bufferView) {
+    //             this.status = GLTFImageStatus.FAILED;
+    //             throw new Error("GLTFImage loadImage get bufferView Failed");
+    //         }
+    //         const viewoffset = bufferView.byteOffset;
+    //         const viewlength = bufferView.byteLength;
+    //         const bufdata = await bufferView.loadData();
+    //         const mimeType = this.json.mimeType;
+    //         const buf = new ArrayBuffer(viewlength);
+    //         new Uint8Array(buf).set(bufdata.slice(viewoffset, viewoffset + viewlength))
+    //         data = resolveImageData(buf);
+
+    //     }
+    //     this.data = data;
+    //     this.status = GLTFImageStatus.READY;
+    //     return this.data;
+    // }
+
+    async loadImage() {
 
         if (this.status !== GLTFImageStatus.NONE) {
             return;
@@ -694,48 +771,41 @@ export class GLTFImage {
 
         this.status = GLTFImageStatus.LOADING;
 
-        return (async () => {
-
-            const image: ImageBitmap | null = null;
-            if (this.json.uri) {
-                let absUri: string = "";
-                if (this.json.uri.startsWith("data:")) {
-                    absUri = this.json.uri;
-                } else {
-                    absUri = `${this.gltf.url}/${this.json.uri}`;
-                }
-                fetch(absUri).then(res => {
-                    res.blob().then(blob => {
-                        createImageBitmap(blob).then(image => {
-                            this.image = image;
-                            this.status = GLTFImageStatus.READY;
-                            return this.image;
-                        })
-                    })
-                });
-            } else if (this.json.bufferView) {
-
-                const bufferView = this.gltf.bufferViews[this.json.bufferView];
-                if (!bufferView) {
-                    this.status = GLTFImageStatus.FAILED;
-                    throw new Error("GLTFImage loadImage get bufferView Failed");
-                }
-                const viewoffset = bufferView.byteOffset;
-                const viewlength = bufferView.byteLength;
-                bufferView.loadData().then((data) => {
-                    const mimeType = this.json.mimeType;
-                    const buf = new ArrayBuffer(viewlength);
-                    new Uint8Array(buf).set(data.slice(viewoffset, viewoffset + viewlength))
-                    arrayBufferToImageBitmap(buf, mimeType);
-                    this.image = image;
-                    this.status = GLTFImageStatus.READY;
-                    return this.image;
-                });
+        let image: ImageBitmap | null = null;
+        if (this.json.uri) {
+            let absUri: string = "";
+            if (this.json.uri.startsWith("data:")) {
+                absUri = this.json.uri;
+            } else {
+                absUri = `${this.gltf.url}/${this.json.uri}`;
             }
+            const res = await fetch(absUri);
+            const blob = await res.blob();
+            image = await createImageBitmap(blob, {
+                colorSpaceConversion: 'none',
+                imageOrientation: 'from-image',
+                premultiplyAlpha: 'none'
+            });
 
-        })();
+        } else if (this.json.bufferView) {
 
+            const bufferView = this.gltf.bufferViews[this.json.bufferView];
+            if (!bufferView) {
+                this.status = GLTFImageStatus.FAILED;
+                throw new Error("GLTFImage loadImage get bufferView Failed");
+            }
+            const viewoffset = bufferView.byteOffset;
+            const viewlength = bufferView.byteLength;
+            const data = await bufferView.loadData();
+            const mimeType = this.json.mimeType;
+            const buf = new ArrayBuffer(viewlength);
+            new Uint8Array(buf).set(data.slice(viewoffset, viewoffset + viewlength))
+            image = await arrayBufferToImageBitmap(buf, mimeType);
 
+        }
+        this.image = image;
+        this.status = GLTFImageStatus.READY;
+        return this.image;
     }
 };
 

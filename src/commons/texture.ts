@@ -85,3 +85,52 @@ export function createCheckerBoardTexture(options: CheckerBoardTextureOptions): 
     }
 
 }
+
+export function createTexture2D(device: GPUDevice, source: ImageBitmap): GPUTexture {
+    // 1. 确定格式：数据纹理用 rgba8unorm，颜色纹理用 rgba8unorm-srgb
+    // 亮度偏高通常就是因为数据纹理错误使用了 -srgb
+    const format: GPUTextureFormat = "rgba8unorm";
+
+    const texture = device.createTexture({
+        size: [source.width, source.height],
+        format: format,
+        usage:
+            GPUTextureUsage.TEXTURE_BINDING |
+            GPUTextureUsage.COPY_DST |
+            GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    // 2. 将 ImageBitmap 写入纹理
+    device.queue.copyExternalImageToTexture(
+        {
+            source: source,
+            flipY: false
+        },
+        { texture: texture },
+        [source.width, source.height]
+    );
+
+    return texture;
+}
+
+export function createTexture2DFromTypedArray(device: GPUDevice, data: Uint8Array, width: number, height: number): GPUTexture {
+    const texture = device.createTexture({
+        size: [width, height],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    // 4. 将原始像素写入纹理
+    device.queue.writeTexture(
+        { texture },
+        data.buffer, // 这里的 data 是 width * height * 4 的 RGBA 数组
+        {
+            offset: 0,
+            bytesPerRow: width * 4, // writeTexture 接口不需要 256 字节对齐
+            rowsPerImage: height,
+        },
+        [width, height]
+    );
+
+    return texture;
+}

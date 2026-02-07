@@ -4,7 +4,7 @@
 struct VSInput {
     @location(0) position: vec3f,
     @location(1) normal: vec3f,
-    @location(2) tangent: vec3f,
+    @location(2) tangent: vec4f,
     @location(3) texcoord0: vec2f,
     @location(4) texcoord1: vec2f,
     @location(5) texcoord2: vec2f,
@@ -16,12 +16,12 @@ struct VSOutput {
     @builtin(position) position: vec4f,
     @location(0) worldpos: vec3f,
     @location(1) normal: vec3f,
-    @location(2) tangent: vec3f,
+    @location(2) tangent: vec4f,
     @location(3) baseColorTexcoord: vec2f,
     @location(4) metallicRoughnessTexcoord: vec2f,
     @location(5) normalTexcoord: vec2f,
     @location(6) emmissiveTexcoord: vec2f,
-    @location(7) occlusionTexcoord: vec2f,
+    @location(7) occlusionTexcoord: vec2f
 };
 
 struct TexCoordOrder {
@@ -34,8 +34,9 @@ struct TexCoordOrder {
 
 struct ModelUniform {
     modelmtx: mat4x4f,
-    normalmtx: mat3x3f,
-    tangentmtx: mat3x3f,
+    normalmtx: mat4x4f,
+    tangentmtx: mat4x4f,
+    hasTangent: u32,
     texcoordOrder: TexCoordOrder
 };
 
@@ -70,8 +71,11 @@ fn getTexcoord(input:VSInput, idx: u32) -> vec2f {
     var output: VSOutput;
     output.position = ndcpos;
     output.worldpos = worldpos.xyz;
-    output.normal = model.normalmtx * input.normal;
-    output.tangent = model.tangentmtx * input.tangent;
+    output.normal = (model.normalmtx * vec4f(input.normal,0.0)).xyz;
+    var tangent4 = vec4f(input.tangent.xyz,0.0);
+    tangent4 = model.normalmtx * tangent4;
+    tangent4.w = input.tangent.w;
+    output.tangent = tangent4;
     output.baseColorTexcoord = getTexcoord(input, model.texcoordOrder.baseColor);
     output.metallicRoughnessTexcoord = getTexcoord(input, model.texcoordOrder.metallicRoughness);
     output.normalTexcoord = getTexcoord(input, model.texcoordOrder.normal);
@@ -82,7 +86,28 @@ fn getTexcoord(input:VSInput, idx: u32) -> vec2f {
 
 @fragment fn fs(input: VSOutput) -> @location(0) vec4f {
 
-    let n = normalize(input.normal);
+    // let c = textureSample(
+    //     metallicRoughnessTexture, 
+    //     metallicRoughnessSampler, 
+    //     input.metallicRoughnessTexcoord);
+    // let color = vec4f(c.b,c.b,c.b,1);
+    
+    // var n = textureSample(
+    //     normalTexture, 
+    //     normalSampler, 
+    //     input.normalTexcoord);
+    // n.a = 1.0;
+    // let color = n;
+    
+    // let color = vec4f(input.normal,1.0);
+
+    // var color = textureSample(
+    //     baseColorTexture, 
+    //     baseColorSampler, 
+    //     input.baseColorTexcoord);
+
+    // let texcoord = input.texcoord1;
+    // let color = vec4f(texcoord,0,1);
 
     let color = getPbrMaterialColor(
         input.baseColorTexcoord,
@@ -93,6 +118,8 @@ fn getTexcoord(input:VSInput, idx: u32) -> vec2f {
         input.worldpos,
         scene.camera.eye,
         input.normal,
+        u32bool(model.hasTangent),
+        input.tangent,
         scene.numLights,
         scene.lights
     );

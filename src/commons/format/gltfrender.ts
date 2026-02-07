@@ -1,12 +1,13 @@
-import { mat3, mat4 } from "gl-matrix";
+import { mat4 } from "gl-matrix";
 import { makeShaderDataDefinitions, makeStructuredView, type ShaderDataDefinitions, type StructuredView } from "webgpu-utils";
+import { PbrMaterial } from "../material";
+import { normalMatrix } from "../matrix";
 import type Scene from "../scene";
 import code from '../shader/gltf.wgsl';
 import { assertNotNull } from "../utils";
 import type { CanvasGPUInfo, GPUInfo } from "../webgpuUtils";
 import type GLTF from "./gltf";
 import { GLTFAccessor, GLTFAccessorCompType, GLTFAttributres, type GLTFMesh, type GLTFNode, type GLTFPrimitive, type GLTFScene, type TGLTF } from "./gltf";
-import { PbrMaterial } from "../material";
 
 interface GLTFPipelineAttributeOptions {
     exists: boolean;
@@ -164,9 +165,9 @@ class GLTFPipeline {
 
     getCullMode(): GPUCullMode {
         if (this.options.doubleSided) {
-            return 'front';
-        } else {
             return 'none';
+        } else {
+            return 'front';
         }
     }
 
@@ -199,7 +200,7 @@ class GLTFPipeline {
             entries: [
                 {
                     binding: 0,
-                    visibility: GPUShaderStage.VERTEX,
+                    visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
                     buffer: {
                         type: 'uniform'
                     }
@@ -406,6 +407,8 @@ export default class GLTFRender {
                 gltfPipeline.createPipeline(this.webgpu.gpuinfo, this.webgpu.canvasinfo, this.webgpu.scene);
             }
         } else {
+            console.log(key);
+            console.log(opts);
             gltfPipeline = new GLTFPipeline(opts);
             gltfPipeline.createPipeline(this.webgpu.gpuinfo, this.webgpu.canvasinfo, this.webgpu.scene);
             GLTFRender.pipelines[key] = gltfPipeline;
@@ -414,25 +417,26 @@ export default class GLTFRender {
         const device = this.webgpu.gpuinfo.device;
 
         //uniform
+        const modelView = makeStructuredView(gltfPipeline.definition.uniforms.model);
+        const texcoordOrderMap = primitive.getGPUMaterialTexCoordMap();
         if (primitive.webgpu.uniform == null) {
-            const modelView = makeStructuredView(gltfPipeline.definition.uniforms.model);
-            const texcoordOrderMap = primitive.getGPUMaterialTexCoordMap();
             primitive.webgpu.uniform = this.createModelUniform(device, modelView);
-            modelView.set({
-                modelmtx: mtx,
-                normalmtx: mat3.normalFromMat4(mat3.create(), mtx),
-                tangentmtx: mat3.normalFromMat4(mat3.create(), mtx),
-                texcoordOrder: {
-                    baseColor: texcoordOrderMap.baseColor ?? 0,
-                    metallicRoughness: texcoordOrderMap.metallicRoughness ?? 0,
-                    normal: texcoordOrderMap.normal ?? 0,
-                    emmissive: texcoordOrderMap.emmissive ?? 0,
-                    occlusion: texcoordOrderMap.occlusion ?? 0
-                }
-            });
-            // gltf 是静态文件，写一次就够了
-            device.queue.writeBuffer(primitive.webgpu.uniform, 0, modelView.arrayBuffer);
         }
+        modelView.set({
+            modelmtx: mtx,
+            normalmtx: normalMatrix(mtx),
+            tangentmtx: normalMatrix(mtx),
+            hasTangent: primitive.hasTangent() ? 1 : 0,
+            texcoordOrder: {
+                baseColor: texcoordOrderMap.baseColor ?? 0,
+                metallicRoughness: texcoordOrderMap.metallicRoughness ?? 0,
+                normal: texcoordOrderMap.normal ?? 0,
+                emmissive: texcoordOrderMap.emmissive ?? 0,
+                occlusion: texcoordOrderMap.occlusion ?? 0
+            }
+        });
+        // TODO 动静分离
+        device.queue.writeBuffer(primitive.webgpu.uniform, 0, modelView.arrayBuffer);
 
 
         // bindgroup
@@ -493,7 +497,7 @@ export default class GLTFRender {
         if (tangentBufferInfo != null) {
             params.pass.setVertexBuffer(2, tangentBufferInfo.buffer, tangentBufferInfo.offset, tangentBufferInfo.size);
         } else {
-            params.pass.setVertexBuffer(2, primitive.getDefaultVec3FloatGPUBuffer(device));
+            params.pass.setVertexBuffer(2, primitive.getDefaultVec4FloatGPUBuffer(device));
         }
         for (let i = 0; i < 5; ++i) {
             const info = texcoordBufferInfos[i];

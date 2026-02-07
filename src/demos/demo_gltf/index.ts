@@ -11,8 +11,13 @@ import './styles.css';
 import { mat4 } from 'gl-matrix';
 import GLTF from '../../commons/format/gltf';
 import GLTFRender from '../../commons/format/gltfrender';
-import damagedHelmetGLTFURL from '/data/mesh/gltf/DamagedHelmet/DamagedHelmet.gltf?url';
+import DamagedHelmetGLTFURL from '/data/mesh/gltf/DamagedHelmet/DamagedHelmet.gltf?url';
+import ChronographWatchGLTFURL from '/data/mesh/gltf/ChronographWatch/ChronographWatch.gltf?url';
+import CarConceptGLTFURL from '/data/mesh/gltf/CarConcept/CarConcept.gltf?url';
+import DiffuseTransmissionTeacupGLTFURL from '/data/mesh/gltf/DiffuseTransmissionTeacup/DiffuseTransmissionTeacup.gltf?url';
 import type { NumArr3 } from '../../commons/defines';
+import { random, randomSign } from '../../commons/utils';
+import { Pane } from 'tweakpane';
 
 class GLTFDemo {
 
@@ -50,9 +55,22 @@ class GLTFDemo {
 
     readyCallbacks: ((MeshDemo) => void)[] = []
 
+    pane = new Pane({ title: "参数控制" });
+
+    paneParams = {
+        rotate: {
+            x: 0,
+            y: 0,
+            z: 0
+        }
+    }
+
+    matrix: mat4 = mat4.create();
+
     constructor() {
 
         createGPUInfo().then(gpuinfo => {
+
             if (gpuinfo === null) {
                 console.error("GPU INFO is NULL");
                 return;
@@ -91,8 +109,10 @@ class GLTFDemo {
             this.scene = new Scene(this.camera, this.projection);
 
             for (let i = 0; i < 10; ++i) {
-                const pos: NumArr3 = [Math.random(), Math.random(), Math.random()]
-                    .map(c => c * 2 - 1).map(c => c * 10) as NumArr3;
+                const pos: NumArr3 = [
+                    random(100, 200) * randomSign(),
+                    random(100, 200) * randomSign(),
+                    random(100, 200) * randomSign()]
                 this.scene.addLight(new PointLight(pos, [1, 1, 1, 1]));
             }
 
@@ -107,12 +127,12 @@ class GLTFDemo {
             this.gltfRender = new GLTFRender(this.gpuInfo, this.canvasInfo, this.scene);
 
             //objects
-            this.ground = new Ground({
-                xsize: 100,
-                ysize: 100,
-                density: 2
-            });
-            this.ground.initWebGPU(this.gpuInfo, this.canvasInfo);
+            // this.ground = new Ground({
+            //     xsize: 100,
+            //     ysize: 100,
+            //     density: 2
+            // });
+            // this.ground.initWebGPU(this.gpuInfo, this.canvasInfo);
 
             this.axis = new Axis({
                 xlim: [0, 50],
@@ -135,6 +155,8 @@ class GLTFDemo {
             });
 
             this.resizeObserver.observe(canvasInfo.canvas);
+
+            this.setPane();
 
             this.ready = true;
 
@@ -205,11 +227,12 @@ class GLTFDemo {
             }
 
             for (const gltf of this.gltfs) {
+                const mtx = mat4.multiply(mat4.create(), this.matrix, gltf.matrix);
                 this.gltfRender.render({
                     pass,
                     gltf: gltf.gltf,
                     sceneRef: gltf.scene,
-                    matrix: gltf.matrix
+                    matrix: mtx
                 });
             }
 
@@ -229,7 +252,80 @@ class GLTFDemo {
 
     }
 
+    setPane() {
+        this.pane.addBinding(this.paneParams.rotate, "x", {
+            min: 0, max: 360, step: 1,
+        }).on("change", (e) => {
+            const matrix = mat4.create();
+            mat4.rotateX(matrix, matrix, e.value * Math.PI / 180);
+            mat4.rotateY(matrix, matrix, this.paneParams.rotate.y * Math.PI / 180);
+            mat4.rotateZ(matrix, matrix, this.paneParams.rotate.z * Math.PI / 180);
+            this.matrix = matrix;
+        });
+        this.pane.addBinding(this.paneParams.rotate, "y", {
+            min: 0, max: 360, step: 1,
+        }).on("change", (e) => {
+            const matrix = mat4.create();
+            mat4.rotateX(matrix, matrix, this.paneParams.rotate.x * Math.PI / 180);
+            mat4.rotateY(matrix, matrix, e.value * Math.PI / 180);
+            mat4.rotateZ(matrix, matrix, this.paneParams.rotate.z * Math.PI / 180);
+            this.matrix = matrix;
+        });
+        this.pane.addBinding(this.paneParams.rotate, "z", {
+            min: 0, max: 360, step: 1,
+        }).on("change", (e) => {
+            const matrix = mat4.create();
+            mat4.rotateX(matrix, matrix, this.paneParams.rotate.x * Math.PI / 180);
+            mat4.rotateY(matrix, matrix, this.paneParams.rotate.y * Math.PI / 180);
+            mat4.rotateZ(matrix, matrix, e.value * Math.PI / 180);
+            this.matrix = matrix;
+        });
+    }
 
+
+}
+
+interface GLTFSource {
+    name: string
+    gltf: GLTF
+    scene: GLTFRef
+    matrix: mat4
+}
+
+const GLTFResources: { [key: string]: GLTFSource } = {
+    DamagedHelmet: {
+        name: "DamagedHelmet",
+        gltf: new GLTF({ uri: DamagedHelmetGLTFURL }),
+        scene: 0,
+        matrix: (() => {
+            const m = mat4.create();
+            mat4.rotateX(m, m, Math.PI / 2);
+            mat4.rotateY(m, m, Math.PI);
+            return m;
+        })()
+    },
+    ChronographWatch: {
+        name: "ChronographWatch",
+        gltf: new GLTF({ uri: ChronographWatchGLTFURL }),
+        scene: 0,
+        matrix: mat4.create()
+    },
+    CarConcept: {
+        name: "CarConcept",
+        gltf: new GLTF({ uri: CarConceptGLTFURL }),
+        scene: 0,
+        matrix: mat4.create()
+    },
+    DiffuseTransmissionTeacup: {
+        name: "DiffuseTransmissionTeacup",
+        gltf: new GLTF({ uri: DiffuseTransmissionTeacupGLTFURL }),
+        scene: 0,
+        matrix: (() => {
+            const m = mat4.create();
+            // mat4.rotateX(m, m, Math.PI / 2);
+            return m;
+        })()
+    }
 }
 
 function main() {
@@ -239,26 +335,11 @@ function main() {
     demo.onReady(() => {
         demo.draw();
 
-        const gltfurl = damagedHelmetGLTFURL;
+        const gltfSource = GLTFResources.DiffuseTransmissionTeacup;
 
-        const gltf = new GLTF({
-            uri: gltfurl
-        });
+        gltfSource.gltf.onReady(() => {
 
-
-        const matrix = mat4.create();
-        mat4.translate(matrix, matrix, [0, 0, 2]);
-        mat4.rotateX(matrix, matrix, Math.PI / 2);
-        mat4.rotateY(matrix, matrix, Math.PI);
-        // mat4.scale(matrix, matrix, [100, 100, 100]);
-
-        gltf.onReady(() => {
-
-            demo.addGLTF({
-                gltf,
-                scene: 0,
-                matrix
-            });
+            demo.addGLTF(gltfSource);
 
         });
 

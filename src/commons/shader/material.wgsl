@@ -39,13 +39,13 @@ const ALPHAMODE_BLEND: u32 = 2;
 
 fn gamma(c:vec4f) -> vec4f {
     const g = 2.2;
-    const g3 = vec3f(g,g,g);
+    const g3 = vec3f(g);
     return vec4f(pow(c.xyz, g3), c.a);
 }
 
 fn rgamma(c:vec4f) -> vec4f {
     const g = 1.0/2.2;
-    const g3 = vec3f(g,g,g);
+    const g3 = vec3f(g);
     return vec4f(pow(c.xyz, g3), c.a);
 }
 
@@ -58,6 +58,8 @@ fn getPbrMaterialColor(
     surfpos: vec3f,
     eyepos: vec3f,
     normal: vec3f,
+    hasTangent: bool,
+    tangent: vec4f,
     nlights: u32,
     lights: array<PointLight,32u>
 ) -> vec4f {
@@ -83,16 +85,59 @@ fn getPbrMaterialColor(
 
     var newNormal: vec3f = normal;
     if(u32bool(pbrMaterial.hasNormalTexture)) {
-        newNormal = normal;
-        //TODO 计算向量
+        let N = normalize(normal);
+        let P = surfpos;
+        let C = normalTexcoord;
+        var T: vec3f;
+        var B: vec3f;
+        var tbn: mat3x3f;
+        if(hasTangent) {
+            T = normalize(tangent.xyz);
+            B = cross(N,T) * tangent.w;
+            tbn = mat3x3f(T,B,N);
+        } else {
+            // 1. 计算位置 P 和 UV 的偏导数
+            // dpdx, dpdy 得到的是模型表面沿屏幕轴的切向量
+            let dp1 = dpdx(P);
+            let dp2 = dpdy(P);
+            let duv1 = dpdx(C);
+            let duv2 = dpdy(C);
+
+            // 2. 构建 T 和 B (切线和副切线)
+            // 解线性方程组：dP = T*du + B*dv
+            let dp2perp = cross(dp2, N);
+            let dp1perp = cross(N, dp1);
+
+            // 计算原始切线 T 和副切线 B
+            let T = dp2perp * duv1.x + dp1perp * duv2.x;
+            let B = dp2perp * duv1.y + dp1perp * duv2.y;
+
+            // 3. 计算缩放因子，确保 TBN 矩阵的比例正确
+            let invmax = inverseSqrt(max(dot(T, T), dot(B, B)));
+
+            // 构造 TBN 矩阵并进行变换
+            // 注意：WGSL mat3x3f 构造函数是按列填充的
+            tbn = mat3x3f(
+                T * invmax, 
+                B * invmax, 
+                N
+            );
+        }
+        var mapN = textureSample(
+            normalTexture, 
+            normalSampler, 
+            normalTexcoord).xyz * 2.0 - 1.0;
+        mapN = vec3f(mapN.xy * pbrMaterial.normalScale, mapN.z);
+        mapN = tbn * mapN;
+        newNormal = normalize(mapN);
     }
 
     var emmissive:vec4f = vec4f(pbrMaterial.emmissiveFactor,1.0);
     if(u32bool(pbrMaterial.hasEmmissiveTexture)) {
-        emmissive = textureSample(
-        emmissiveTexture, 
-        emmissiveSampler, 
-        emmissiveTexcoord);
+        emmissive = gamma(textureSample(
+            emmissiveTexture, 
+            emmissiveSampler, 
+            emmissiveTexcoord));
         emmissive = emmissive * vec4f(pbrMaterial.emmissiveFactor,1.0);
     }
 
@@ -115,7 +160,12 @@ fn getPbrMaterialColor(
         lights
     );
 
-    var finalColor = occlusion * (emmissive + pbrcolor);
+    //TODO occlusion 只针对环境光间接光源
+
+    var finalColor = emmissive + pbrcolor;
+
+    finalColor = rgamma(finalColor);
+
     finalColor.a = cbase.a;
 
     return finalColor;
@@ -165,8 +215,8 @@ fn computePbrColorOneLight(
     let l = normalize(vlight);
     let h = normalize(vhalf);
 
-    let n_dot_v = max(dot(n, v), 1e-7); // 防止分母为 0
-    let n_dot_l = max(dot(n, l), 1e-7);
+    let n_dot_v = max(dot(n, v), 0.0); // 防止分母为 0
+    let n_dot_l = max(dot(n, l), 0.0);
     let n_dot_h = max(dot(n, h), 0.0);
     let v_dot_h = max(dot(v, h), 0.0);
 
