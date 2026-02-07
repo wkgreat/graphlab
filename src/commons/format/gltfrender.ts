@@ -283,7 +283,7 @@ class GLTFPipeline {
             primitive: {
                 topology: 'triangle-list', //TODO
                 cullMode: this.getCullMode(),
-                frontFace: 'ccw',
+                frontFace: 'cw', //TODO 自动判断
             },
             depthStencil: {
                 depthWriteEnabled: this.getDepthWriteEnabled(),
