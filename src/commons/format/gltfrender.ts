@@ -167,7 +167,7 @@ class GLTFPipeline {
         if (this.options.doubleSided) {
             return 'none';
         } else {
-            return 'front';
+            return 'back';
         }
     }
 
@@ -283,7 +283,7 @@ class GLTFPipeline {
             primitive: {
                 topology: 'triangle-list', //TODO
                 cullMode: this.getCullMode(),
-                frontFace: 'cw', //TODO 自动判断
+                frontFace: 'ccw', //TODO 自动判断
             },
             depthStencil: {
                 depthWriteEnabled: this.getDepthWriteEnabled(),
