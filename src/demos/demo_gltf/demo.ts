@@ -1,5 +1,5 @@
 import Camera, { CameraMouseControl } from '../../commons/camera';
-import { type GLTFRef } from '../../commons/format/gltf';
+import { type GLTFRef } from '../../commons/format/gltf/gltf';
 import PointLight from '../../commons/light';
 import Axis from '../../commons/mesh/axis';
 import { Ground } from '../../commons/objects';
@@ -9,17 +9,13 @@ import { createCanvasGPUInfo, createDepthTexture, createGPUInfo, createRenderPas
 import './styles.css';
 
 import { mat4 } from 'gl-matrix';
-import GLTF from '../../commons/format/gltf';
-import GLTFRender from '../../commons/format/gltfrender';
-import DamagedHelmetGLTFURL from '/data/mesh/gltf/DamagedHelmet/DamagedHelmet.gltf?url';
-import ChronographWatchGLTFURL from '/data/mesh/gltf/ChronographWatch/ChronographWatch.gltf?url';
-import CarConceptGLTFURL from '/data/mesh/gltf/CarConcept/CarConcept.gltf?url';
-import DiffuseTransmissionTeacupGLTFURL from '/data/mesh/gltf/DiffuseTransmissionTeacup/DiffuseTransmissionTeacup.gltf?url';
+import GLTF from '../../commons/format/gltf/gltf';
+import GLTFRender from '../../commons/format/gltf/gltfrender';
 import type { NumArr3 } from '../../commons/defines';
 import { random, randomSign } from '../../commons/utils';
 import { Pane } from 'tweakpane';
 
-class GLTFDemo {
+export class GLTFDemo {
 
     gpuInfo: GPUInfo | null = null
 
@@ -253,7 +249,12 @@ class GLTFDemo {
     }
 
     setPane() {
-        this.pane.addBinding(this.paneParams.rotate, "x", {
+        const modelFolder = this.pane.addFolder({
+            title: "模型设置",
+            expanded: true
+        });
+        modelFolder.addBinding(this.paneParams.rotate, "x", {
+            label: "rotate x",
             min: 0, max: 360, step: 1,
         }).on("change", (e) => {
             const matrix = mat4.create();
@@ -262,7 +263,8 @@ class GLTFDemo {
             mat4.rotateZ(matrix, matrix, this.paneParams.rotate.z * Math.PI / 180);
             this.matrix = matrix;
         });
-        this.pane.addBinding(this.paneParams.rotate, "y", {
+        modelFolder.addBinding(this.paneParams.rotate, "y", {
+            label: "rotate y",
             min: 0, max: 360, step: 1,
         }).on("change", (e) => {
             const matrix = mat4.create();
@@ -271,7 +273,8 @@ class GLTFDemo {
             mat4.rotateZ(matrix, matrix, this.paneParams.rotate.z * Math.PI / 180);
             this.matrix = matrix;
         });
-        this.pane.addBinding(this.paneParams.rotate, "z", {
+        modelFolder.addBinding(this.paneParams.rotate, "z", {
+            label: "rotate z",
             min: 0, max: 360, step: 1,
         }).on("change", (e) => {
             const matrix = mat4.create();
@@ -284,67 +287,3 @@ class GLTFDemo {
 
 
 }
-
-interface GLTFSource {
-    name: string
-    gltf: GLTF
-    scene: GLTFRef
-    matrix: mat4
-}
-
-const GLTFResources: { [key: string]: GLTFSource } = {
-    DamagedHelmet: {
-        name: "DamagedHelmet",
-        gltf: new GLTF({ uri: DamagedHelmetGLTFURL }),
-        scene: 0,
-        matrix: (() => {
-            const m = mat4.create();
-            mat4.rotateX(m, m, Math.PI / 2);
-            mat4.rotateY(m, m, Math.PI);
-            return m;
-        })()
-    },
-    ChronographWatch: {
-        name: "ChronographWatch",
-        gltf: new GLTF({ uri: ChronographWatchGLTFURL }),
-        scene: 0,
-        matrix: mat4.create()
-    },
-    CarConcept: {
-        name: "CarConcept",
-        gltf: new GLTF({ uri: CarConceptGLTFURL }),
-        scene: 0,
-        matrix: mat4.create()
-    },
-    DiffuseTransmissionTeacup: {
-        name: "DiffuseTransmissionTeacup",
-        gltf: new GLTF({ uri: DiffuseTransmissionTeacupGLTFURL }),
-        scene: 0,
-        matrix: (() => {
-            const m = mat4.create();
-            // mat4.rotateX(m, m, Math.PI / 2);
-            return m;
-        })()
-    }
-}
-
-function main() {
-
-    const demo = new GLTFDemo();
-
-    demo.onReady(() => {
-        demo.draw();
-
-        const gltfSource = GLTFResources.DamagedHelmet;
-
-        gltfSource.gltf.onReady(() => {
-
-            demo.addGLTF(gltfSource);
-
-        });
-
-    })
-
-}
-
-main();

@@ -1,22 +1,29 @@
 #include ./math.wgsl
 
+struct TextureTransform {
+    offset: vec2f,
+    rotation: f32,
+    scale: vec2f
+}
+
+struct TextureInfo {
+    hasTexture: u32,
+    hasTextureTransform: u32,
+    textureTransform: TextureTransform
+}
+
 struct PbrMaterialUniform {
     baseColorFactor: vec4f,
-    hasBaseColorTexture: u32,
-    baseColorTexcoordIndex: u32,
+    baseColorTexture: TextureInfo,
     metallicFactor: f32,
     roughnessFactor: f32,
-    hasMetallicRoughnessTexture: u32,
-    metallicRoughnessTexcoordIndex: u32,
+    metallicRoughnessTexture: TextureInfo,
     normalScale: f32,
-    hasNormalTexture: u32,
-    normalTextureTexcoordIndex: u32,
+    normalTexture: TextureInfo,
     emmissiveFactor: vec3f,
-    hasEmmissiveTexture: u32,
-    emmissiveTexcoordIndex: u32,
+    emmissiveTexture: TextureInfo,
     occlusionStrength: f32,
-    hasOcclusionTexture: u32,
-    occlusionTexcoordIndex: u32,
+    occlusionTexture: TextureInfo,
     alphaMode: u32,
     alphaCutoff: f32
 }
@@ -49,6 +56,20 @@ fn rgamma(c:vec4f) -> vec4f {
     return vec4f(pow(c.xyz, g3), c.a);
 }
 
+fn textureTransform(texcoord: vec2f, transform: TextureTransform)-> vec2f {
+    let R = transform.rotation;
+    let translation = mat3x3f(1,0,0, 0,1,0, transform.offset.x, transform.offset.y, 1);
+    let rotation = mat3x3f(
+        cos(R), sin(R), 0,
+       -sin(R), cos(R), 0,
+        0,             0, 1
+    );
+    let scale = mat3x3f(transform.scale.x,0,0, 0, transform.scale.y,0, 0,0,1);
+    let matrix = translation * rotation * scale;
+    let uvTransformed = ( matrix * vec3f(texcoord.xy, 1) ).xy;
+    return uvTransformed;
+}
+
 fn getPbrMaterialColor(
     baseColorTexcoord: vec2f,
     metallicRoughnessTexcoord: vec2f,
@@ -65,7 +86,7 @@ fn getPbrMaterialColor(
 ) -> vec4f {
 
     var cbase: vec4f = pbrMaterial.baseColorFactor;
-    if(u32bool(pbrMaterial.hasBaseColorTexture)) {
+    if(u32bool(pbrMaterial.baseColorTexture.hasTexture)) {
         cbase = gamma(textureSample(
                 baseColorTexture, 
                 baseColorSampler, 
@@ -74,7 +95,7 @@ fn getPbrMaterialColor(
 
     var metallic: f32 = pbrMaterial.metallicFactor;
     var roughness: f32 = pbrMaterial.roughnessFactor;
-    if(u32bool(pbrMaterial.hasMetallicRoughnessTexture)) {
+    if(u32bool(pbrMaterial.metallicRoughnessTexture.hasTexture)) {
         let metallicRoughness = textureSample(
         metallicRoughnessTexture, 
         metallicRoughnessSampler, 
@@ -84,7 +105,7 @@ fn getPbrMaterialColor(
     }
 
     var newNormal: vec3f = normal;
-    if(u32bool(pbrMaterial.hasNormalTexture)) {
+    if(u32bool(pbrMaterial.normalTexture.hasTexture)) {
         let N = normalize(normal);
         let P = surfpos;
         let C = normalTexcoord;
@@ -123,17 +144,21 @@ fn getPbrMaterialColor(
                 N
             );
         }
+        var texcoord = normalTexcoord;
+        if(u32bool(pbrMaterial.normalTexture.hasTextureTransform)) {
+            texcoord = textureTransform(texcoord, pbrMaterial.normalTexture.textureTransform);
+        }
         var mapN = textureSample(
             normalTexture, 
             normalSampler, 
-            normalTexcoord).xyz * 2.0 - 1.0;
+            texcoord).xyz * 2.0 - 1.0;
         mapN = vec3f(mapN.xy * pbrMaterial.normalScale, mapN.z);
         mapN = tbn * mapN;
         newNormal = normalize(mapN);
     }
 
     var emmissive:vec4f = vec4f(pbrMaterial.emmissiveFactor,1.0);
-    if(u32bool(pbrMaterial.hasEmmissiveTexture)) {
+    if(u32bool(pbrMaterial.emmissiveTexture.hasTexture)) {
         emmissive = gamma(textureSample(
             emmissiveTexture, 
             emmissiveSampler, 
@@ -142,11 +167,11 @@ fn getPbrMaterialColor(
     }
 
     var occlusion:vec4f = vec4f(1,1,1,1);
-    if(u32bool(pbrMaterial.hasOcclusionTexture)) {
+    if(u32bool(pbrMaterial.occlusionTexture.hasTexture)) {
         occlusion = textureSample(
-        occlusionTexture, 
-        occlusionSampler, 
-        occlusionTexcoord) * pbrMaterial.occlusionStrength;
+            occlusionTexture, 
+            occlusionSampler, 
+            occlusionTexcoord) * pbrMaterial.occlusionStrength;
     }
 
     let pbrcolor = getPbrColor(

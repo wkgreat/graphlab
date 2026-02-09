@@ -1,0 +1,91 @@
+/* 覆盖 react-complex-tree 的默认变量 */
+
+:root {
+    --rct-color-nonfocustree-item-selected-bg: #3f3f46;
+    --rct-color-focustree-item-focused-border: transparent;
+    --rct-color-nonfocustree-item-focused-border: transparent;
+    border: none !important;
+}
+
+/* 1. 让树的根节点不要限制在 100% 宽度 */
+.rct-tree-root {
+    display: inline-block !important;
+    min-width: 100% !important;
+}
+
+/* 2. 这里的每一项是关键：强制宽度由内容决定 */
+.rct-tree-item-li {
+    width: max-content !important;
+    min-width: 100% !important;
+}
+
+/* 3. 覆盖按钮样式，防止 flex 压缩内容 */
+.rct-tree-item-button {
+    width: max-content !important;
+    min-width: 100% !important;
+    display: flex !important;
+    /* 保持内部对齐 */
+    white-space: nowrap !important;
+    /* 绝对禁止换行 */
+}
+
+/* 4. 如果你使用了自定义的 renderItemTitle */
+.rct-tree-item-title {
+    display: inline-block !important;
+    white-space: nowrap !important;
+}
+
+
+.rct-tree-item-button:hover {
+    background-color: #2a2d2e;
+}
+
+.rct-tree-root-focus {
+    outline: none;
+    border-color: transparent;
+}
+
+.rct-tree-item-arrow svg {
+    stroke: white
+}
+
+.rct-tree-item-arrow-expanded svg {
+    stroke: white;
+}
+
+.rct-tree-root {
+    /* 背景与文字颜色 */
+    --rct-color-tree-bg: #1e1e1e;
+    /* --rct-color-tree-focus-outline: #007acc; */
+
+    /* 节点文字颜色 */
+    --rct-color-focustree-item-selected-bg: #37373d;
+    --rct-color-focustree-item-selected-text: #ffffff;
+
+    /* 非焦点状态下的选中项 */
+
+    --rct-color-notfocustree-item-selected-bg: #3f3f46;
+    --rct-color-notfocustree-item-selected-text: #ffffff;
+
+    /* 悬停效果 */
+    --rct-color-focustree-item-hover-bg: #2a2d2e;
+    --rct-color-notfocustree-item-hover-bg: #2a2d2e;
+
+    /* 拖拽指示器颜色 */
+    /* --rct-color-drag-between-line: #007acc; */
+
+    /* 基础文字颜色 (如果变量未生效，直接设置 color) */
+    color: #cccccc;
+}
+
+/* 箭头图标颜色适配 */
+.rct-tree-item-arrow {
+    border-left-color: #cccccc !important;
+}
+
+/* 输入框（重命名时）样式 */
+.rct-tree-item-renaming-input {
+    background-color: #3c3c3c !important;
+    color: white !important;
+    border: 1px solid #007acc !important;
+}

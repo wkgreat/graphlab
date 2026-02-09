@@ -1,11 +1,11 @@
 import { mat4 } from "gl-matrix";
 import { makeShaderDataDefinitions, makeStructuredView, type ShaderDataDefinitions, type StructuredView } from "webgpu-utils";
-import { PbrMaterial } from "../material";
-import { normalMatrix } from "../matrix";
-import type Scene from "../scene";
-import code from '../shader/gltf.wgsl';
-import { assertNotNull } from "../utils";
-import type { CanvasGPUInfo, GPUInfo } from "../webgpuUtils";
+import { PbrMaterial } from "../../material";
+import { normalMatrix } from "../../matrix";
+import type Scene from "../../scene";
+import code from '../../shader/gltf.wgsl';
+import { assertNotNull } from "../../utils";
+import type { CanvasGPUInfo, GPUInfo } from "../../webgpuUtils";
 import type GLTF from "./gltf";
 import { GLTFAccessor, GLTFAccessorCompType, GLTFAttributres, type GLTFMesh, type GLTFNode, type GLTFPrimitive, type GLTFScene, type TGLTF } from "./gltf";
 
@@ -364,6 +364,12 @@ export default class GLTFRender {
 
     renderNode(node: GLTFNode, mtx: mat4, params: GLTRRenderParams) {
 
+        if (!node.enabled) {
+            return;
+        } else {
+            // console.log(node.ref);
+        }
+
         const curMtx = mat4.multiply(mat4.create(), mtx, node.matrix);
 
         if (node.children != null) {
@@ -383,12 +389,12 @@ export default class GLTFRender {
 
         if (node.mesh != null) {
             const mesh = params.gltf.meshes[node.mesh];
-            this.renderMesh(mesh, curMtx, params);
+            this.renderMesh(node, mesh, curMtx, params);
         }
 
     }
 
-    renderMesh(mesh: GLTFMesh, mtx: mat4, params: GLTRRenderParams) {
+    renderMesh(node: GLTFNode, mesh: GLTFMesh, mtx: mat4, params: GLTRRenderParams) {
         for (const p of mesh.primitives) {
             this.renderPrimitive(mesh, mtx, p, params);
         }
@@ -407,8 +413,6 @@ export default class GLTFRender {
                 gltfPipeline.createPipeline(this.webgpu.gpuinfo, this.webgpu.canvasinfo, this.webgpu.scene);
             }
         } else {
-            console.log(key);
-            console.log(opts);
             gltfPipeline = new GLTFPipeline(opts);
             gltfPipeline.createPipeline(this.webgpu.gpuinfo, this.webgpu.canvasinfo, this.webgpu.scene);
             GLTFRender.pipelines[key] = gltfPipeline;
@@ -422,7 +426,7 @@ export default class GLTFRender {
         if (primitive.webgpu.uniform == null) {
             primitive.webgpu.uniform = this.createModelUniform(device, modelView);
         }
-        modelView.set({
+        const modelUniformData = {
             modelmtx: mtx,
             normalmtx: normalMatrix(mtx),
             tangentmtx: normalMatrix(mtx),
@@ -434,7 +438,8 @@ export default class GLTFRender {
                 emmissive: texcoordOrderMap.emmissive ?? 0,
                 occlusion: texcoordOrderMap.occlusion ?? 0
             }
-        });
+        };
+        modelView.set(modelUniformData);
         // TODO 动静分离
         device.queue.writeBuffer(primitive.webgpu.uniform, 0, modelView.arrayBuffer);
 

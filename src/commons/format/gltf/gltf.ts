@@ -1,13 +1,16 @@
-import { type GLTF as TGLTF } from '@gltf-transform/core';
+import { type GLTF as TGLTF, type Extension as TGLTFExtension } from '@gltf-transform/core';
 import { mat4, quat, vec3 } from "gl-matrix";
 import { createTextureFromSource } from 'webgpu-utils';
-import type { NumArr16, NumArr3, NumArr4 } from '../defines';
-import { PbrMaterial, type PbrMaterialOptions } from '../material';
-import RenderObject, { type RenderObjectOptions } from '../mesh/object';
-import type Scene from '../scene';
-import type { CanvasGPUInfo, GPUInfo } from '../webgpuUtils';
+import type { NumArr16, NumArr3, NumArr4 } from '../../defines';
+import { PbrMaterial, type PbrMaterialOptions } from '../../material';
+import RenderObject, { type RenderObjectOptions } from '../../mesh/object';
+import type Scene from '../../scene';
+import type { CanvasGPUInfo, GPUInfo } from '../../webgpuUtils';
+import { arrayBufferToImageBitmap } from '../../image';
+import { GLTFExtensions, GLTFKNRTextureTransform } from './gltfexts';
 
 export type { GLTF as TGLTF } from '@gltf-transform/core';
+export type { Extension as TGLTFExtension } from '@gltf-transform/core';
 
 export type GLTFRef = number;
 
@@ -37,6 +40,9 @@ export class GLTFNode {
     camera?: GLTFRef;
     skin?: GLTFRef;
     mesh?: GLTFRef;
+
+    #enabled: boolean = true;
+
     constructor(gltf: GLTF, ref: GLTFRef, json: TGLTF.INode) {
         this.gltf = gltf;
         this.ref = ref;
@@ -60,6 +66,22 @@ export class GLTFNode {
         this.camera = this.json.camera;
         this.mesh = this.json.mesh;
         this.skin = this.json.skin;
+    }
+
+    get enabled() {
+        return this.#enabled;
+    }
+
+    enable() {
+        this.#enabled = true;
+    }
+
+    disable() {
+        this.#enabled = false;
+    }
+
+    switch() {
+        this.#enabled = !this.#enabled;
     }
 }
 
@@ -222,9 +244,10 @@ export class GLTFPrimitive {
     }
 
     getTexCoordOrderMap(): { [key: number]: number } {
+
         const entries = Object.keys(this.json.attributes)
             .filter(a => a.startsWith(GLTFAttributres.TEXCOORD))
-            .map(a => { parseInt(a.split("_")[1]) }).sort()
+            .map(a => parseInt(a.split("_")[1])).sort()
             .map((idx, ord) => [idx, ord]);
         return Object.fromEntries(entries);
     }
@@ -381,6 +404,10 @@ export class GLTFTexutre {
             return this.webgpu.sampler;
         }
     }
+
+    destroy() {
+        this.webgpu.texture?.destroy();
+    }
 }
 
 export class GLTFSampler {
@@ -495,26 +522,41 @@ export class GLTFMaterial {
     #gltf: GLTF
     #ref?: GLTFRef
     #json?: TGLTF.IMaterial
-    #pbr: {
-        baseColorTexture?: TGLTF.ITextureInfo
-        baseColorFactor: NumArr4
-        metallicRoughnessTexture?: TGLTF.ITextureInfo
-        metallicFactor: number
-        roughnessFactor: number
-    } = {
-            baseColorFactor: [1.0, 1.0, 1.0, 1.0],
-            metallicFactor: 1.0,
-            roughnessFactor: 1.0
-        };
-    #normalScale: number = 1.0;
-    #normalTexture?: TGLTF.ITextureInfo;
-    #emissiveFactor: NumArr3 = [0, 0, 0];
-    #emissiveTexture?: TGLTF.ITextureInfo;
-    #occlusionStrength: number = 1.0
-    #occlusionTexture?: TGLTF.ITextureInfo;
+
     #alphaMode: TGLTF.MaterialAlphaMode = "OPAQUE"
     #alphaCutoff: number = 0.5;
     #doubleSided: boolean = false;
+
+    baseColor: {
+        factor: number[];
+        texture?: TGLTF.ITextureInfo;
+        textureTransform?: GLTFKNRTextureTransform;
+    } = { factor: [1.0, 1.0, 1.0, 1.0] }
+
+    pbr: {
+        metallic: number
+        roughness: number
+        texture?: TGLTF.ITextureInfo;
+        textureTransform?: GLTFKNRTextureTransform;
+    } = { metallic: 1.0, roughness: 1.0 }
+
+    normal: {
+        scale: number;
+        texture?: TGLTF.ITextureInfo;
+        textureTransform?: GLTFKNRTextureTransform;
+    } = { scale: 1.0 };
+
+    emmissive: {
+        factor: number[];
+        texture?: TGLTF.ITextureInfo;
+        textureTransform?: GLTFKNRTextureTransform;
+    } = { factor: [0, 0, 0] }
+
+    occlusion: {
+        strength: number;
+        texture?: TGLTF.ITextureInfo;
+        textureTransform?: GLTFKNRTextureTransform;
+    } = { strength: 1.0 }
 
     webgpu: {
         material?: PbrMaterial
@@ -527,26 +569,42 @@ export class GLTFMaterial {
         if (this.#json) {
             const pbrJson = this.#json.pbrMetallicRoughness;
             if (pbrJson) {
-                this.#pbr.baseColorTexture = pbrJson.baseColorTexture;
-                this.#pbr.metallicRoughnessTexture = pbrJson.metallicRoughnessTexture;
-                this.#pbr.baseColorFactor = pbrJson.baseColorFactor as NumArr4;
-                this.#pbr.metallicFactor = pbrJson.metallicFactor;
-                this.#pbr.roughnessFactor = pbrJson.roughnessFactor;
-            }
-            this.#normalTexture = this.#json.normalTexture;
-            this.#emissiveTexture = this.#json.emissiveTexture;
-            this.#occlusionTexture = this.#json.occlusionTexture;
 
-            if (this.#json.normalTexture?.scale != null) {
-                this.#normalScale = this.#json.normalTexture.scale;
+                this.baseColor.factor = pbrJson.baseColorFactor ?? [1.0, 1.0, 1.0, 1.0];
+                this.baseColor.texture = pbrJson.baseColorTexture;
+                this.baseColor.textureTransform = this.getTextureTransform(this.baseColor.texture);
+                if (this.baseColor.textureTransform?.texcoord != null) {
+                    this.baseColor.texture.index = this.baseColor.textureTransform?.texcoord;
+                }
+
+                this.pbr.metallic = pbrJson.metallicFactor ?? 1.0;
+                this.pbr.roughness = pbrJson.roughnessFactor ?? 1.0;
+                this.pbr.texture = pbrJson.metallicRoughnessTexture;
+                this.pbr.textureTransform = this.getTextureTransform(this.pbr.texture);
+                if (this.pbr.textureTransform?.texcoord != null) {
+                    this.pbr.texture.index = this.pbr.textureTransform?.texcoord;
+                }
             }
 
-            if (this.#json.occlusionTexture?.strength != null) {
-                this.#occlusionStrength = this.#json.occlusionTexture.strength;
+            this.normal.scale = this.#json.normalTexture?.scale ?? 1.0;
+            this.normal.texture = this.#json.normalTexture;
+            this.normal.textureTransform = this.getTextureTransform(this.normal.texture);
+            if (this.normal.textureTransform?.texcoord != null) {
+                this.normal.texture.index = this.normal.textureTransform?.texcoord;
             }
 
-            if (this.#json.emissiveFactor != null) {
-                this.#emissiveFactor = this.#json.emissiveFactor as NumArr3;
+            this.emmissive.factor = this.#json.emissiveFactor ?? [0, 0, 0];
+            this.emmissive.texture = this.#json.emissiveTexture;
+            this.emmissive.textureTransform = this.getTextureTransform(this.emmissive.texture);
+            if (this.emmissive.textureTransform?.texcoord != null) {
+                this.emmissive.texture.index = this.emmissive.textureTransform?.texcoord;
+            }
+
+            this.occlusion.strength = this.#json.occlusionTexture?.strength ?? 1.0;
+            this.occlusion.texture = this.#json.occlusionTexture;
+            this.occlusion.textureTransform = this.getTextureTransform(this.occlusion.texture);
+            if (this.occlusion.textureTransform?.texcoord != null) {
+                this.occlusion.texture.index = this.occlusion.textureTransform?.texcoord;
             }
 
             this.#alphaMode = this.#json.alphaMode;
@@ -554,6 +612,34 @@ export class GLTFMaterial {
             this.#doubleSided = this.#json.doubleSided;
 
         }
+    }
+
+    getTextureTransform(textureInfo?: TGLTF.ITextureInfo): GLTFKNRTextureTransform | null {
+        if (textureInfo == null) {
+            return null;
+        }
+        if (textureInfo.extensions == null) {
+            return null;
+        }
+        if (GLTFExtensions.KHR_texture_transform in textureInfo.extensions) {
+            return new GLTFKNRTextureTransform(textureInfo.extensions.KHR_texture_transform);
+        }
+
+    }
+    hasBaseColorTexture(): boolean {
+        return this.baseColor.texture != null;
+    }
+    hasMetallicRoughnessTexture(): boolean {
+        return this.pbr.texture != null;
+    }
+    hasNormalTexture(): boolean {
+        return this.normal.texture != null;
+    }
+    hasEmissiveTexture(): boolean {
+        return this.emmissive.texture != null;
+    }
+    hasOcclusionTexture(): boolean {
+        return this.occlusion.texture != null;
     }
 
     getAlphaMode(): TGLTF.MaterialAlphaMode {
@@ -568,29 +654,13 @@ export class GLTFMaterial {
         return this.#doubleSided;
     }
 
-    hasBaseColorTexture(): boolean {
-        return !!this.#pbr.baseColorTexture;
-    }
-    hasMetallicRoughnessTexture(): boolean {
-        return !!this.#pbr.metallicRoughnessTexture;
-    }
-    hasNormalTexture(): boolean {
-        return !!this.#normalTexture;
-    }
-    hasEmissiveTexture(): boolean {
-        return !!this.#emissiveTexture;
-    }
-    hasOcclusionTexture(): boolean {
-        return !!this.#occlusionTexture;
-    }
-
     getTexcoordIndexMap() {
         const idxmap: GLTFMaterialTexCoordIndexMap = {
-            baseColor: this.#pbr.baseColorTexture?.texCoord,
-            metallicRoughness: this.#pbr.metallicRoughnessTexture?.texCoord,
-            normal: this.#normalTexture?.texCoord,
-            emmissive: this.#emissiveTexture?.texCoord,
-            occlusion: this.#occlusionTexture?.texCoord
+            baseColor: this.baseColor.texture?.index,
+            metallicRoughness: this.pbr.texture?.index,
+            normal: this.normal.texture?.index,
+            emmissive: this.emmissive.texture?.index,
+            occlusion: this.occlusion.texture?.index
         }
         return idxmap;
     }
@@ -601,13 +671,14 @@ export class GLTFMaterial {
             let ready: boolean = true;
 
             const options: PbrMaterialOptions = {
+                ref: this.#ref,
                 externalTexture: true,
-                baseColorFactor: this.#pbr.baseColorFactor,
-                metallicFactor: this.#pbr.metallicFactor,
-                roughnessFactor: this.#pbr.roughnessFactor,
-                normalScale: this.#normalScale,
-                emmissiveFactor: this.#emissiveFactor,
-                occlusionStrength: this.#occlusionStrength,
+                baseColorFactor: this.baseColor.factor,
+                metallicFactor: this.pbr.metallic,
+                roughnessFactor: this.pbr.roughness,
+                normalScale: this.normal.scale,
+                emmissiveFactor: this.emmissive.factor,
+                occlusionStrength: this.occlusion.strength,
                 alphaMode: this.#alphaMode,
                 alphaCutoff: this.#alphaCutoff,
                 doubleSided: this.#doubleSided
@@ -615,7 +686,7 @@ export class GLTFMaterial {
 
             //basecolor
             if (this.hasBaseColorTexture()) {
-                const textureInfo = this.#pbr.baseColorTexture;
+                const textureInfo = this.baseColor.texture;
                 const gltfTexture = this.#gltf.textures[textureInfo.index];
                 const gpuTexutre = gltfTexture.getGPUTexture(device);
                 options.baseColorTexCoord = textureInfo.texCoord ?? 0;
@@ -624,11 +695,12 @@ export class GLTFMaterial {
                 } else {
                     options.baseColorTexture = gpuTexutre;
                     options.baseColorSampler = gltfTexture.getGPUSampler(device);
+                    options.baseColorTextureTransform = this.baseColor.textureTransform;
                 }
             }
             //metal
             if (this.hasMetallicRoughnessTexture()) {
-                const textureInfo = this.#pbr.metallicRoughnessTexture;
+                const textureInfo = this.pbr.texture;
                 const gltfTexture = this.#gltf.textures[textureInfo.index];
                 const gpuTexutre = gltfTexture.getGPUTexture(device);
                 options.metallicRoughnessTexCoord = textureInfo.texCoord ?? 0;
@@ -637,12 +709,13 @@ export class GLTFMaterial {
                 } else {
                     options.metallicRoughnessTexture = gpuTexutre;
                     options.metallicRoughnessSampler = gltfTexture.getGPUSampler(device);
+                    options.metallicRoughnessTextureTransform = this.pbr.textureTransform;
                 }
             }
 
             //normal
             if (this.hasNormalTexture()) {
-                const textureInfo = this.#normalTexture;
+                const textureInfo = this.normal.texture;
                 const gltfTexture = this.#gltf.textures[textureInfo.index];
                 const gpuTexutre = gltfTexture.getGPUTexture(device);
                 options.normalTexCoord = textureInfo.texCoord ?? 0;
@@ -651,11 +724,12 @@ export class GLTFMaterial {
                 } else {
                     options.normalTexture = gpuTexutre;
                     options.normalSampler = gltfTexture.getGPUSampler(device);
+                    options.normalTextureTransform = this.normal.textureTransform;
                 }
             }
             //emmissive
             if (this.hasEmissiveTexture()) {
-                const textureInfo = this.#emissiveTexture;
+                const textureInfo = this.emmissive.texture;
                 const gltfTexture = this.#gltf.textures[textureInfo.index];
                 const gpuTexutre = gltfTexture.getGPUTexture(device);
                 options.emmissiveTexCoord = textureInfo.texCoord ?? 0;
@@ -664,11 +738,12 @@ export class GLTFMaterial {
                 } else {
                     options.emmissiveTexture = gpuTexutre;
                     options.emmissiveSampler = gltfTexture.getGPUSampler(device);
+                    options.emmissiveTextureTransform = this.emmissive.textureTransform;
                 }
             }
             //occlusion
             if (this.hasOcclusionTexture()) {
-                const textureInfo = this.#occlusionTexture;
+                const textureInfo = this.occlusion.texture;
                 const gltfTexture = this.#gltf.textures[textureInfo.index];
                 const gpuTexutre = gltfTexture.getGPUTexture(device);
                 options.occlusionTexCoord = textureInfo.texCoord ?? 0;
@@ -677,9 +752,11 @@ export class GLTFMaterial {
                 } else {
                     options.occlusionTexture = gpuTexutre;
                     options.occlusionSampler = gltfTexture.getGPUSampler(device);
+                    options.occlusionTextureTransform = this.occlusion.textureTransform;
                 }
             }
 
+            //TODO fix 重复创建uniform
             const material = new PbrMaterial(options);
 
             if (ready) {
@@ -690,6 +767,10 @@ export class GLTFMaterial {
 
         }
         return this.webgpu.material;
+    }
+
+    destroy() {
+        this.webgpu.material.destroy();
     }
 
 
@@ -807,6 +888,8 @@ export class GLTFImage {
         this.status = GLTFImageStatus.READY;
         return this.image;
     }
+
+    destroy() {}
 };
 
 export class GLTFCamera {
@@ -1020,6 +1103,12 @@ export class GLTFBuffer {
             }
         }
     }
+
+    destroy() {
+        for (const buffer of Object.values(this.webgpu.buffers)) {
+            buffer.destroy();
+        }
+    }
 };
 
 
@@ -1176,20 +1265,18 @@ export default class GLTF extends RenderObject {
         throw new Error('Method not implemented.');
     }
     destroy(): void {
-        throw new Error('Method not implemented.');
+        for (const buffer of this.buffers) {
+            buffer.destroy();
+        }
+        for (const image of this.images) {
+            image.destroy();
+        }
+        for (const texutre of this.textures) {
+            texutre.destroy();
+        }
+        for (const material of this.materials) {
+            material.destroy();
+        }
     }
 
-}
-
-async function arrayBufferToImageBitmap(
-    buffer: ArrayBuffer,
-    mimeType: string
-): Promise<ImageBitmap> {
-    const blob = new Blob([buffer], { type: mimeType });
-    const bitmap = await createImageBitmap(blob, {
-        premultiplyAlpha: 'none', // 根据需要选择 'none' / 'premultiply'
-        colorSpaceConversion: 'none', // 保留原始色彩
-    });
-
-    return bitmap;
 }

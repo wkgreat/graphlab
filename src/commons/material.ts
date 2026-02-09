@@ -1,7 +1,8 @@
 import { makeShaderDataDefinitions, makeStructuredView } from "webgpu-utils";
 import type { ChangeCallback, NumArr3, NumArr4 } from "./defines";
-import type { TGLTF } from "./format/gltf";
+import type { TGLTF } from "./format/gltf/gltf";
 import code from './shader/material.wgsl';
+import type { GLTFKNRTextureTransform } from "./format/gltf/gltfexts";
 
 export interface BlinnPhongMaterialOptions {
     ka: number
@@ -121,32 +122,38 @@ export interface PbrMaterialOptions {
     * 是否引用的外部texture，如果是则texture不能直接销毁
     */
     externalTexture: boolean;
+    ref: number;
 
-    baseColorFactor: NumArr4;
+    baseColorFactor: number[];
     baseColorTexture?: GPUTexture;
     baseColorSampler?: GPUSampler;
     baseColorTexCoord?: number;
+    baseColorTextureTransform?: GLTFKNRTextureTransform;
 
     metallicFactor: number;
     roughnessFactor: number;
     metallicRoughnessTexture?: GPUTexture;
     metallicRoughnessSampler?: GPUSampler;
     metallicRoughnessTexCoord?: number;
+    metallicRoughnessTextureTransform?: GLTFKNRTextureTransform;
 
     normalScale: number;
     normalTexture?: GPUTexture;
     normalSampler?: GPUSampler;
     normalTexCoord?: number;
+    normalTextureTransform?: GLTFKNRTextureTransform;
 
-    emmissiveFactor: NumArr3;
+    emmissiveFactor: number[];
     emmissiveTexture?: GPUTexture;
     emmissiveSampler?: GPUSampler;
     emmissiveTexCoord?: number;
+    emmissiveTextureTransform?: GLTFKNRTextureTransform;
 
     occlusionStrength: number;
     occlusionTexture?: GPUTexture;
     occlusionSampler?: GPUSampler;
     occlusionTexCoord?: number;
+    occlusionTextureTransform?: GLTFKNRTextureTransform;
 
     alphaMode: TGLTF.MaterialAlphaMode;
     alphaCutoff: number;
@@ -242,6 +249,14 @@ export class PbrMaterial {
         return PbrMaterial.defaultSampler;
     }
 
+    getDefaultTextureTransform() {
+        return {
+            offset: [0, 0],
+            rotation: 0,
+            scale: [1, 1]
+        }
+    }
+
     getBindGroup(device: GPUDevice): GPUBindGroup {
         if (!this.bindgroup) {
             const bindgroup = device.createBindGroup({
@@ -278,19 +293,43 @@ export class PbrMaterial {
             });
             const data = {
                 baseColorFactor: this.options.baseColorFactor,
-                hasBaseColorTexture: (this.options.baseColorTexture == null) ? 0 : 1,
+                baseColorTexture: {
+                    hasTexture: (this.options.baseColorTexture == null) ? 0 : 1,
+                    hasTextureTransform: this.options.baseColorTextureTransform == null ? 0 : 1,
+                    textureTransform: this.options.baseColorTextureTransform?.uniformObject ?? this.getDefaultTextureTransform(),
+                },
                 metallicFactor: this.options.metallicFactor,
                 roughnessFactor: this.options.roughnessFactor,
-                hasMetallicRoughnessTexture: (this.options.metallicRoughnessTexture == null) ? 0 : 1,
+                metallicRoughnessTexture: {
+                    hasTexture: (this.options.metallicRoughnessTexture == null) ? 0 : 1,
+                    hasTextureTransform: this.options.metallicRoughnessTextureTransform == null ? 0 : 1,
+                    textureTransform: this.options.metallicRoughnessTextureTransform?.uniformObject ?? this.getDefaultTextureTransform(),
+                },
                 normalScale: this.options.normalScale,
-                hasNormalTexture: (this.options.normalTexture == null) ? 0 : 1,
+                normalTexture: {
+                    hasTexture: (this.options.normalTexture == null) ? 0 : 1,
+                    hasTextureTransform: this.options.normalTextureTransform == null ? 0 : 1,
+                    textureTransform: this.options.normalTextureTransform?.uniformObject ?? this.getDefaultTextureTransform(),
+                },
                 emmissiveFactor: this.options.emmissiveFactor,
-                hasEmmissiveTexture: (this.options.emmissiveTexture == null) ? 0 : 1,
+                emmissiveTexture: {
+                    hasTexture: (this.options.emmissiveTexture == null) ? 0 : 1,
+                    hasTextureTransform: this.options.emmissiveTextureTransform == null ? 0 : 1,
+                    textureTransform: this.options.emmissiveTextureTransform?.uniformObject ?? this.getDefaultTextureTransform(),
+                },
                 occlusionStrength: this.options.occlusionStrength,
-                hasOcclusionTexture: (this.options.occlusionTexture == null) ? 0 : 1,
+                occlusionTexture: {
+                    hasTexture: (this.options.occlusionTexture == null) ? 0 : 1,
+                    hasTextureTransform: this.options.occlusionTextureTransform == null ? 0 : 1,
+                    textureTransform: this.options.occlusionTextureTransform?.uniformObject ?? this.getDefaultTextureTransform(),
+                },
                 alphaMode: AlphaModeCodes[this.options.alphaMode],
                 alphaCutoff: this.options.alphaCutoff
             };
+
+            if (this.options.ref === 12) {
+                console.log(data);
+            }
 
             view.set(data);
 

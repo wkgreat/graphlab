@@ -1,6 +1,19 @@
 import jpeg from 'jpeg-js';
 import UPNG from 'upng-js';
 
+export async function arrayBufferToImageBitmap(
+    buffer: ArrayBuffer,
+    mimeType: string
+): Promise<ImageBitmap> {
+    const blob = new Blob([buffer], { type: mimeType });
+    const bitmap = await createImageBitmap(blob, {
+        premultiplyAlpha: 'none', // 根据需要选择 'none' / 'premultiply'
+        colorSpaceConversion: 'none', // 保留原始色彩
+    });
+
+    return bitmap;
+}
+
 export interface ImageDataInfo {
     data: Uint8Array,
     width: number,
