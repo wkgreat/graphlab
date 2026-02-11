@@ -3,8 +3,7 @@ import { Pane } from 'tweakpane';
 import Camera, { CameraMouseControl } from '../../commons/camera';
 import { Ground } from '../../commons/objects';
 import Projection from '../../commons/projection';
-import { createDepthTexture, createRenderPassDescriptor, type CanvasGPUInfo } from '../../commons/webgpuUtils';
-import { createCanvasGPUInfo, createGPUInfo, type GPUInfo } from '../demo_dem/webgpuUtils';
+import { createCanvasGPUInfo, createDepthTexture, createGPUInfo, createRenderPassDescriptor, type CanvasGPUInfo, type GPUInfo } from '../../commons/webgpuUtils';
 import './styles.css';
 
 import bunnyURL from '/data/mesh/bun_zipper.ply?url';
