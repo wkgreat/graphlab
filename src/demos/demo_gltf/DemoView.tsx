@@ -78,7 +78,7 @@ const DemoView: FC<DemoViewProps> = (props) => {
                 title: "设置"
             });
             const options = Object.fromEntries(Object.entries(GLTFResources).map(([k, v]) => [k, k]));
-            paneRef.current.addBinding(paneDataRef.current, "gltf", {
+            paneRef.current.addBinding(paneDataRef.current, "gltf" as never, {
                 label: "glTF模型",
                 options: options
             }).on("change", (e) => {

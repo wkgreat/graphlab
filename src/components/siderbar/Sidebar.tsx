@@ -42,7 +42,7 @@ const Sidebar: FC<SiderbarPorps> = (props) => {
 
                     {/* 这里可以放入你的 React Complex Tree */}
                     <div style={{ marginTop: '20px' }}>
-                        {props.childern}
+                        {props.children}
                     </div>
 
                     {/* 关闭按钮 */}

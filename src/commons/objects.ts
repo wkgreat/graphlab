@@ -5,7 +5,6 @@ import type { NumArr3, NumArr4 } from "./defines";
 import type Projection from "./projection";
 import { createCheckerBoardTexture } from "./texture";
 import type { CanvasGPUInfo, GPUInfo } from "./webgpuUtils";
-import type { mat4 } from "@gltf-transform/core";
 
 interface RayCrossTriangleResult {
     cross: boolean,

@@ -1,8 +1,7 @@
 import { Ground } from '../../commons/objects';
 import Projection from '../../commons/projection';
-import { createDepthTexture, createRenderPassDescriptor, type CanvasGPUInfo } from '../../commons/webgpuUtils';
+import { createCanvasGPUInfo, createDepthTexture, createGPUInfo, createRenderPassDescriptor, type CanvasGPUInfo, type GPUInfo } from '../../commons/webgpuUtils';
 import Camera, { CameraMouseControl } from '../../commons/camera';
-import { createCanvasGPUInfo, createGPUInfo, type GPUInfo } from '../demo_dem/webgpuUtils';
 import './styles.css';
 import { Pane } from 'tweakpane';
 import type { NumArr3 } from '../../commons/defines';
