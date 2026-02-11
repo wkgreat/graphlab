@@ -7,7 +7,7 @@ export interface DemoInfo {
 
 export function getAllDemos(): DemoInfo[] {
     const modules = import.meta.glob("./demos/**/meta.json", { eager: true, import: 'default' });
-    console.log(modules);
+
     const demos = Object.keys(modules).map(path => {
 
         const meta = modules[path] as object;

@@ -10,10 +10,11 @@ import ChronographWatchGLTFURL from '/data/mesh/gltf/ChronographWatch/Chronograp
 import CarConceptGLTFURL from '/data/mesh/gltf/CarConcept/CarConcept.gltf?url';
 import DiffuseTransmissionTeacupGLTFURL from '/data/mesh/gltf/DiffuseTransmissionTeacup/DiffuseTransmissionTeacup.gltf?url';
 import { mat4 } from "gl-matrix";
+import { Pane } from "tweakpane";
 
 interface GLTFSource {
     name: string
-    gltf: GLTF
+    uri: string
     scene: GLTFRef
     matrix: mat4
 }
@@ -21,34 +22,32 @@ interface GLTFSource {
 const GLTFResources: { [key: string]: GLTFSource } = {
     DamagedHelmet: {
         name: "DamagedHelmet",
-        gltf: new GLTF({ uri: DamagedHelmetGLTFURL }),
+        uri: DamagedHelmetGLTFURL,
         scene: 0,
-        matrix: (() => {
-            const m = mat4.create();
-            mat4.rotateX(m, m, Math.PI / 2);
-            mat4.rotateY(m, m, Math.PI);
-            return m;
-        })()
+        matrix: mat4.create()
     },
     ChronographWatch: {
         name: "ChronographWatch",
-        gltf: new GLTF({ uri: ChronographWatchGLTFURL }),
+        uri: ChronographWatchGLTFURL,
         scene: 0,
         matrix: mat4.create()
     },
     CarConcept: {
         name: "CarConcept",
-        gltf: new GLTF({ uri: CarConceptGLTFURL }),
-        scene: 0,
-        matrix: mat4.create()
-    },
-    DiffuseTransmissionTeacup: {
-        name: "DiffuseTransmissionTeacup",
-        gltf: new GLTF({ uri: DiffuseTransmissionTeacupGLTFURL }),
+        uri: CarConceptGLTFURL,
         scene: 0,
         matrix: (() => {
             const m = mat4.create();
-            // mat4.rotateX(m, m, Math.PI / 2);
+            mat4.rotateX(m, m, -Math.PI / 2);
+            return m;
+        })()
+    },
+    DiffuseTransmissionTeacup: {
+        name: "DiffuseTransmissionTeacup",
+        uri: DiffuseTransmissionTeacupGLTFURL,
+        scene: 0,
+        matrix: (() => {
+            const m = mat4.create();
             return m;
         })()
     }
@@ -62,20 +61,53 @@ const DemoView: FC<DemoViewProps> = (props) => {
     const [ready, setReady] = React.useState(false);
     const [gltf, setGLTF] = React.useState(null);
     const demoRef = React.useRef<GLTFDemo>(null);
-
-    if (demoRef.current === null) {
-        demoRef.current = new GLTFDemo();
-    }
+    const paneRef = React.useRef<Pane>(null);
+    const paneDataRef = React.useRef<object>(null);
 
     useEffect(() => {
+        if (demoRef.current == null) {
+            demoRef.current = new GLTFDemo();
+        }
+        if (paneDataRef.current == null) {
+            paneDataRef.current = {
+                gltf: GLTFResources.DamagedHelmet.name
+            }
+        }
+        if (paneRef.current == null) {
+            paneRef.current = new Pane({
+                title: "设置"
+            });
+            const options = Object.fromEntries(Object.entries(GLTFResources).map(([k, v]) => [k, k]));
+            paneRef.current.addBinding(paneDataRef.current, "gltf", {
+                label: "glTF模型",
+                options: options
+            }).on("change", (e) => {
+                const resource = GLTFResources[e.value];
+                const gltf = new GLTF({ uri: resource.uri, name: resource.name });
+                gltf.onReady(() => {
+                    setGLTF(gltf);
+                    demoRef.current.clearAndDestroyGLTFModels();
+                    demoRef.current.addGLTFModel({
+                        gltf,
+                        ...resource
+                    });
+                })
+            })
+        }
+        demoRef.current.setPane(paneRef.current);
         demoRef.current.onReady(() => {
-            const gltfSource = GLTFResources.CarConcept;
-            gltfSource.gltf.onReady(() => {
-                demoRef.current.addGLTF(gltfSource);
-                setGLTF(gltfSource.gltf);
+            const gltfSource = GLTFResources.DamagedHelmet;
+            const gltf = new GLTF({ uri: gltfSource.uri, name: gltfSource.name })
+            gltf.onReady(() => {
+                demoRef.current.addGLTFModel({ gltf, ...gltfSource });
+                setGLTF(gltf);
             });
             demoRef.current.draw();
         });
+
+        return () => {
+        }
+
     }, [])
 
     return (

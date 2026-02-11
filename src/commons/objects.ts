@@ -1,10 +1,11 @@
-import { vec3 } from "gl-matrix";
+import { mat4, vec3 } from "gl-matrix";
 import { createBuffersAndAttributesFromArrays, makeShaderDataDefinitions, makeStructuredView, type BuffersAndAttributes, type ShaderDataDefinitions } from "webgpu-utils";
 import type Camera from "./camera";
 import type { NumArr3, NumArr4 } from "./defines";
 import type Projection from "./projection";
 import { createCheckerBoardTexture } from "./texture";
 import type { CanvasGPUInfo, GPUInfo } from "./webgpuUtils";
+import type { mat4 } from "@gltf-transform/core";
 
 interface RayCrossTriangleResult {
     cross: boolean,
@@ -180,6 +181,7 @@ export class Ray {
 }
 
 export interface GroundOptions {
+    worldmtx?: mat4;
     xsize: number;
     ysize: number;
     density: number;
@@ -213,6 +215,7 @@ export class Ground {
         0, 2, 3,   // 第二个三角形
     ];
 
+    worldmtx: mat4 = mat4.create();
     definition: ShaderDataDefinitions | null = null;
     sceneUniform: GPUBuffer | null = null;
     groundUniform: GPUBuffer | null = null;
@@ -236,6 +239,9 @@ export class Ground {
             } else if (i % 3 === 1) {
                 this.positions[i] *= hy;
             }
+        }
+        if (options.worldmtx != null) {
+            this.worldmtx = options.worldmtx;
         }
     }
 
@@ -285,6 +291,7 @@ export class Ground {
 
         const sceneView = makeStructuredView(this.definition.uniforms.scene);
         sceneView.set({
+            worldmtx: this.worldmtx,
             viewmtx: camera.viewMtx,
             projmtx: projection.perspectiveMatrixZO
         });
@@ -317,6 +324,7 @@ export class Ground {
         const code = /*WGSL*/`
 
         struct SceneUniform {
+            worldmtx: mat4x4f,
             viewmtx: mat4x4f,
             projmtx: mat4x4f
         }
@@ -346,7 +354,7 @@ export class Ground {
         @vertex fn vs(input: VSInput) -> VSOutput {
 
             let worldpos = vec4f(input.position, 1.0);
-            let ndcpos = scene.projmtx * scene.viewmtx * worldpos;
+            let ndcpos = scene.projmtx * scene.viewmtx * scene.worldmtx * worldpos;
             var output: VSOutput;
             output.position = ndcpos;
             output.texcoord = input.texcoord;

@@ -2,25 +2,37 @@ export interface createGPUInfoOptions {}
 
 export interface GPUInfo {
     gpu: GPU,
-    adaptor: GPUAdapter,
+    adapter: GPUAdapter,
     device: GPUDevice
 }
 
 export async function createGPUInfo(options: createGPUInfoOptions = {}): Promise<GPUInfo | null> {
 
     const gpu = navigator.gpu;
-    const adaptor = await gpu.requestAdapter();
-    if (adaptor === null) {
+    const adapter = await gpu.requestAdapter();
+    if (adapter === null) {
         return null;
     }
-    const device = await adaptor?.requestDevice();
+
+    const requiredFeatures = [];
+
+    if (adapter.features.has('texture-compression-bc')) {
+        requiredFeatures.push('texture-compression-bc'); // 支持 BC6H/BC7
+    }
+    if (adapter.features.has('texture-compression-astc')) {
+        requiredFeatures.push('texture-compression-astc'); // 支持移动端 ASTC
+    }
+
+    const device = await adapter?.requestDevice({
+        requiredFeatures
+    });
     if (device === null) {
         return null;
     }
 
     return {
         gpu,
-        adaptor,
+        adapter,
         device
     };
 
@@ -240,4 +252,8 @@ export function createDepthTexture(gpuinfo: GPUInfo, width: number, height: numb
 
     return depthTexture;
 
+}
+
+export function bool2num(b: boolean): number {
+    return b ? 1 : 0;
 }

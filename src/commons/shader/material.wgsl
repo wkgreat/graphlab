@@ -144,14 +144,10 @@ fn getPbrMaterialColor(
                 N
             );
         }
-        var texcoord = normalTexcoord;
-        if(u32bool(pbrMaterial.normalTexture.hasTextureTransform)) {
-            texcoord = textureTransform(texcoord, pbrMaterial.normalTexture.textureTransform);
-        }
         var mapN = textureSample(
             normalTexture, 
             normalSampler, 
-            texcoord).xyz * 2.0 - 1.0;
+            normalTexcoord).xyz * 2.0 - 1.0;
         mapN = vec3f(mapN.xy * pbrMaterial.normalScale, mapN.z);
         mapN = tbn * mapN;
         newNormal = normalize(mapN);

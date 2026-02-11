@@ -35,6 +35,7 @@ struct Viewport {
 }
 
 struct SceneUniform {
+    worldmtx: mat4x4f,
     camera: Camera,
     projection: Projection,
     viewport: Viewport,

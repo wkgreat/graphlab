@@ -11,7 +11,7 @@ struct VSOutput {
 }
 
 @vertex fn vs(input: VSInput) -> VSOutput {
-    let ndcpos = scene.projection.projmtx * scene.camera.viewmtx * vec4f(input.position, 1.0);
+    let ndcpos = scene.projection.projmtx * scene.camera.viewmtx * scene.worldmtx * vec4f(input.position, 1.0);
     var output: VSOutput;
     output.position = ndcpos;
     output.color = input.color;

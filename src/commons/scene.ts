@@ -12,6 +12,7 @@ export default class Scene {
 
     camera: Camera;
     projection: Projection;
+    worldmtx: mat4 = mat4.create();
     #width: number = 0;
     #height: number = 0;
     lights: PointLight[] = [];
@@ -29,6 +30,10 @@ export default class Scene {
     constructor(camera: Camera, projection: Projection) {
         this.camera = camera;
         this.projection = projection;
+    }
+
+    setWorldMatrix(matrix: mat4) {
+        this.worldmtx = matrix;
     }
 
     addLight(light: PointLight) {
@@ -136,6 +141,7 @@ export default class Scene {
             }
 
             const uniformData = {
+                worldmtx: this.worldmtx,
                 camera: cameraData,
                 projection: projectionData,
                 viewport: viewportData,

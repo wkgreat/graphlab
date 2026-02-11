@@ -1,13 +1,12 @@
 import { mat4 } from "gl-matrix";
 import { makeShaderDataDefinitions, makeStructuredView, type ShaderDataDefinitions, type StructuredView } from "webgpu-utils";
-import { PbrMaterial } from "../../material";
 import { normalMatrix } from "../../matrix";
 import type Scene from "../../scene";
 import code from '../../shader/gltf.wgsl';
 import { assertNotNull } from "../../utils";
-import type { CanvasGPUInfo, GPUInfo } from "../../webgpuUtils";
+import { bool2num, type CanvasGPUInfo, type GPUInfo } from "../../webgpuUtils";
 import type GLTF from "./gltf";
-import { GLTFAccessor, GLTFAccessorCompType, GLTFAttributres, type GLTFMesh, type GLTFNode, type GLTFPrimitive, type GLTFScene, type TGLTF } from "./gltf";
+import { GLTFAccessor, GLTFAccessorCompType, GLTFAttributres, GLTFMaterial, GLTFMaterialTextures, type GLTFMesh, type GLTFNode, type GLTFPrimitive, type GLTFScene, type TGLTF } from "./gltf";
 
 interface GLTFPipelineAttributeOptions {
     exists: boolean;
@@ -110,11 +109,11 @@ class GLTFPipeline {
             joints: this.getMultiAttributeOptions(gltf, primitive, GLTFAttributres.JOINTS),
             weights: this.getMultiAttributeOptions(gltf, primitive, GLTFAttributres.WEIGHTS),
             morph: primitive.hasMorph(),
-            colorTexutre: material.hasBaseColorTexture(),
-            metalTexture: material.hasMetallicRoughnessTexture(),
-            normalTexture: material.hasNormalTexture(),
-            emmissiveTexture: material.hasEmissiveTexture(),
-            occlusionTexture: material.hasOcclusionTexture(),
+            colorTexutre: material.hasTexture(GLTFMaterialTextures.BaseColor),
+            metalTexture: material.hasTexture(GLTFMaterialTextures.MetallicRoughness),
+            normalTexture: material.hasTexture(GLTFMaterialTextures.Normal),
+            emmissiveTexture: material.hasTexture(GLTFMaterialTextures.Emmissive),
+            occlusionTexture: material.hasTexture(GLTFMaterialTextures.Occlusion),
             alphaMode: material.getAlphaMode(),
             doubleSided: material.getDoubleSided(),
         }
@@ -212,7 +211,7 @@ class GLTFPipeline {
             label,
             bindGroupLayouts: [
                 this.scene.bindGroupLayout,
-                PbrMaterial.getBindGroupLayout(device),
+                GLTFGPUMaterial.getBindGroupLayout(device),
                 gltfModelLayout
             ]
         });
@@ -623,6 +622,159 @@ export default class GLTFRender {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
         });
         return uniform;
+    }
+
+}
+
+const AlphaModeCodes = {
+    OPAQUE: 0,
+    MASK: 1,
+    BLEND: 2
+} as const;
+
+export class GLTFGPUMaterial {
+
+    material: GLTFMaterial;
+
+    static bindgroupLayout?: GPUBindGroupLayout;
+    bindgroup?: GPUBindGroup;
+
+    webgpu: {
+        uniform?: GPUBuffer;
+    } = {}
+
+    static defaultTexture?: GPUTexture;
+    static defaultSampler?: GPUSampler;
+
+    constructor(material: GLTFMaterial) {
+
+        this.material = material;
+
+    }
+
+    static getBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
+        if (!GLTFGPUMaterial.bindgroupLayout) {
+
+            const visibility = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
+            const texutreLayout: GPUTextureBindingLayout = {
+                sampleType: 'float',
+                viewDimension: '2d',
+                multisampled: false
+            }
+            const samplerLayout: GPUSamplerBindingLayout = { type: 'filtering' };
+
+            const layout = device.createBindGroupLayout({
+                label: "GLTFGPUMaterial",
+                entries: [
+                    //pbrMaterial
+                    { binding: 0, visibility, buffer: { type: 'uniform' } },
+                    //baseColor
+                    { binding: 1, visibility, texture: texutreLayout },
+                    { binding: 2, visibility, sampler: samplerLayout },
+                    //metallicRoughness
+                    { binding: 3, visibility, texture: texutreLayout },
+                    { binding: 4, visibility, sampler: samplerLayout },
+                    //normal
+                    { binding: 5, visibility, texture: texutreLayout },
+                    { binding: 6, visibility, sampler: samplerLayout },
+                    //emmissive
+                    { binding: 7, visibility, texture: texutreLayout },
+                    { binding: 8, visibility, sampler: samplerLayout },
+                    //occlusion
+                    { binding: 9, visibility, texture: texutreLayout },
+                    { binding: 10, visibility, sampler: samplerLayout }
+                ]
+            });
+            GLTFGPUMaterial.bindgroupLayout = layout;
+        }
+        return GLTFGPUMaterial.bindgroupLayout;
+    }
+
+    getBindGroup(device: GPUDevice): GPUBindGroup {
+        if (!this.bindgroup || !this.material.isTextureReady()) {
+            const bindgroup = device.createBindGroup({
+                label: "GLTFGPUMaterial",
+                layout: GLTFGPUMaterial.getBindGroupLayout(device),
+                entries: [
+                    { binding: 0, resource: { buffer: this.getUniform(device) } },
+                    { binding: 1, resource: this.material.getGPUTexture(device, this.material.baseColor.texture) },
+                    { binding: 2, resource: this.material.getGPUSampler(device, this.material.baseColor.texture) },
+                    { binding: 3, resource: this.material.getGPUTexture(device, this.material.pbr.texture) },
+                    { binding: 4, resource: this.material.getGPUSampler(device, this.material.pbr.texture) },
+                    { binding: 5, resource: this.material.getGPUTexture(device, this.material.normal.texture) },
+                    { binding: 6, resource: this.material.getGPUSampler(device, this.material.normal.texture) },
+                    { binding: 7, resource: this.material.getGPUTexture(device, this.material.emmissive.texture) },
+                    { binding: 8, resource: this.material.getGPUSampler(device, this.material.emmissive.texture) },
+                    { binding: 9, resource: this.material.getGPUTexture(device, this.material.occlusion.texture) },
+                    { binding: 10, resource: this.material.getGPUSampler(device, this.material.occlusion.texture) },
+                ]
+            });
+            this.bindgroup = bindgroup;
+        }
+        return this.bindgroup;
+    }
+
+    getUniform(device: GPUDevice): GPUBuffer {
+
+        if (!this.webgpu.uniform) {
+            const def = makeShaderDataDefinitions(code);
+            const view = makeStructuredView(def.uniforms.pbrMaterial);
+            const uniform = device.createBuffer({
+                label: "pbrMaterial",
+                size: view.arrayBuffer.byteLength,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+            });
+            const data = {
+                baseColorFactor: this.material.baseColor.factor,
+                baseColorTexture: {
+                    hasTexture: bool2num(this.material.hasTexture(GLTFMaterialTextures.BaseColor)),
+                    hasTextureTransform: bool2num(this.material.hasTextureTransform(GLTFMaterialTextures.BaseColor)),
+                    textureTransform: this.material.getTextureTransformData(GLTFMaterialTextures.BaseColor),
+                },
+                metallicFactor: this.material.pbr.metallic,
+                roughnessFactor: this.material.pbr.roughness,
+                metallicRoughnessTexture: {
+                    hasTexture: bool2num(this.material.hasTexture(GLTFMaterialTextures.MetallicRoughness)),
+                    hasTextureTransform: bool2num(this.material.hasTextureTransform(GLTFMaterialTextures.MetallicRoughness)),
+                    textureTransform: this.material.getTextureTransformData(GLTFMaterialTextures.MetallicRoughness),
+                },
+                normalScale: this.material.normal.scale,
+                normalTexture: {
+                    hasTexture: bool2num(this.material.hasTexture(GLTFMaterialTextures.Normal)),
+                    hasTextureTransform: bool2num(this.material.hasTextureTransform(GLTFMaterialTextures.Normal)),
+                    textureTransform: this.material.getTextureTransformData(GLTFMaterialTextures.Normal),
+                },
+                emmissiveFactor: this.material.emmissive.factor,
+                emmissiveTexture: {
+                    hasTexture: bool2num(this.material.hasTexture(GLTFMaterialTextures.Emmissive)),
+                    hasTextureTransform: bool2num(this.material.hasTextureTransform(GLTFMaterialTextures.Emmissive)),
+                    textureTransform: this.material.getTextureTransformData(GLTFMaterialTextures.Emmissive),
+                },
+                occlusionStrength: this.material.occlusion.strength,
+                occlusionTexture: {
+                    hasTexture: bool2num(this.material.hasTexture(GLTFMaterialTextures.Occlusion)),
+                    hasTextureTransform: bool2num(this.material.hasTextureTransform(GLTFMaterialTextures.Occlusion)),
+                    textureTransform: this.material.getTextureTransformData(GLTFMaterialTextures.Occlusion),
+                },
+                alphaMode: AlphaModeCodes[this.material.getAlphaMode()],
+                alphaCutoff: this.material.getAlphaCutoff()
+            };
+
+            view.set(data);
+
+            device.queue.writeBuffer(uniform, 0, view.arrayBuffer);
+
+            this.webgpu.uniform = uniform;
+        }
+
+        return this.webgpu.uniform;
+
+    }
+
+
+    destroy() {
+        this.webgpu.uniform?.destroy();
+        this.webgpu.uniform = null;
     }
 
 }

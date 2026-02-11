@@ -1,4 +1,5 @@
 import type { NumArr4 } from "./defines";
+import { type KTX2Container } from 'ktx-parse';
 
 export interface CheckerBoardTextureOptions {
     device: GPUDevice,
@@ -131,6 +132,84 @@ export function createTexture2DFromTypedArray(device: GPUDevice, data: Uint8Arra
         },
         [width, height]
     );
+
+    return texture;
+}
+
+// 常用格式映射表 (Vulkan -> WebGPU)
+const VK_FORMAT_MAP: Record<number, { format: GPUTextureFormat; bpp: number }> = {
+    97: { format: 'rgba16float', bpp: 8 },   // VK_FORMAT_R16G16B16A16_SFLOAT
+    109: { format: 'rgba32float', bpp: 16 },  // VK_FORMAT_R32G32B32A32_SFLOAT
+    106: { format: 'rgba32float', bpp: 16 }, // VK_FORMAT_R32G32B32_SFLOAT
+    37: { format: 'rgba8unorm', bpp: 4 },   // VK_FORMAT_R8G8B8A8_UNORM
+    43: { format: 'rgba8unorm-srgb', bpp: 4 }, // VK_FORMAT_R8G8B8A8_SRGB
+};
+
+/**
+ * 计算每一行需要的字节数，并处理 WebGPU 可能需要的对齐（若使用 copyBufferToTexture）
+ * 这里使用 writeTexture，对齐要求相对宽松
+ */
+function getBytesPerRow(width: number, bpp: number): number {
+    return width * bpp;
+}
+
+export function createCubeTextureFromKTX2(device: GPUDevice, ktx: KTX2Container, lable: string = "ktx2 cubemap"): GPUTexture {
+
+    // 1. 自动检测格式
+    const formatConfig = VK_FORMAT_MAP[ktx.vkFormat];
+    if (!formatConfig) {
+        throw new Error(`Unsupported KTX2 format: ${ktx.vkFormat}. You may need to add it to VK_FORMAT_MAP.`);
+    }
+
+    const { format, bpp } = formatConfig;
+    const width = ktx.pixelWidth;
+    const height = ktx.pixelHeight;
+    const mipCount = ktx.levels.length;
+
+    console.log(formatConfig);
+
+    // 2. 创建 Cubemap 纹理
+    const texture = device.createTexture({
+        label: lable,
+        size: [width, height, 6], // Cubemap 在 WebGPU 中深度为 6
+        mipLevelCount: mipCount,
+        format: format,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+
+    // 3. 遍历 Mipmaps 和 Faces 上传数据
+    for (let level = 0; level < mipCount; level++) {
+        const levelData = ktx.levels[level].levelData;
+        const levelWidth = Math.max(1, width >> level);
+        const levelHeight = Math.max(1, height >> level);
+
+        // KTX2 立方体贴图每个 level 包含 6 个面，顺序为 +X, -X, +Y, -Y, +Z, -Z
+        const faceSize = levelData.byteLength / 6;
+
+        for (let face = 0; face < 6; face++) {
+            const offset = face * faceSize;
+            const dataView = new Uint8Array(
+                levelData.buffer,
+                levelData.byteOffset + offset,
+                faceSize
+            );
+
+            device.queue.writeTexture(
+                {
+                    texture: texture,
+                    mipLevel: level,
+                    origin: [0, 0, face], // 重点：origin.z 代表 face 索引
+                },
+                dataView as unknown as BufferSource,
+                {
+                    offset: 0,
+                    bytesPerRow: getBytesPerRow(levelWidth, bpp),
+                    rowsPerImage: levelHeight,
+                },
+                [levelWidth, levelHeight]
+            );
+        }
+    }
 
     return texture;
 }

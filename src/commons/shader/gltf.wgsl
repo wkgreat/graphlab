@@ -81,6 +81,32 @@ fn getTexcoord(input:VSInput, idx: u32) -> vec2f {
     output.normalTexcoord = getTexcoord(input, model.texcoordOrder.normal);
     output.emmissiveTexcoord = getTexcoord(input, model.texcoordOrder.emmissive);
     output.occlusionTexcoord = getTexcoord(input, model.texcoordOrder.occlusion);
+
+    if(u32bool(pbrMaterial.baseColorTexture.hasTextureTransform)) {
+        output.baseColorTexcoord = textureTransform(
+            output.normalTexcoord,
+            pbrMaterial.baseColorTexture.textureTransform);
+    }
+    if(u32bool(pbrMaterial.metallicRoughnessTexture.hasTextureTransform)) {
+        output.metallicRoughnessTexcoord = textureTransform(
+            output.metallicRoughnessTexcoord,
+            pbrMaterial.metallicRoughnessTexture.textureTransform);
+    }
+    if(u32bool(pbrMaterial.normalTexture.hasTextureTransform)) {
+        output.normalTexcoord = textureTransform(
+            output.normalTexcoord,
+            pbrMaterial.normalTexture.textureTransform);
+    }
+    if(u32bool(pbrMaterial.emmissiveTexture.hasTextureTransform)) {
+        output.emmissiveTexcoord = textureTransform(
+            output.emmissiveTexcoord,
+            pbrMaterial.emmissiveTexture.textureTransform);
+    }
+    if(u32bool(pbrMaterial.occlusionTexture.hasTextureTransform)) {
+        output.occlusionTexcoord = textureTransform(
+            output.occlusionTexcoord,
+            pbrMaterial.occlusionTexture.textureTransform);
+    }
     return output;
 }
 

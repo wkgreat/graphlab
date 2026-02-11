@@ -2,12 +2,12 @@ import { type GLTF as TGLTF, type Extension as TGLTFExtension } from '@gltf-tran
 import { mat4, quat, vec3 } from "gl-matrix";
 import { createTextureFromSource } from 'webgpu-utils';
 import type { NumArr16, NumArr3, NumArr4 } from '../../defines';
-import { PbrMaterial, type PbrMaterialOptions } from '../../material';
-import RenderObject, { type RenderObjectOptions } from '../../mesh/object';
+import RenderObject, { type RenderObjectOptions, type RenderObjectWebGPU } from '../../mesh/object';
 import type Scene from '../../scene';
 import type { CanvasGPUInfo, GPUInfo } from '../../webgpuUtils';
 import { arrayBufferToImageBitmap } from '../../image';
 import { GLTFExtensions, GLTFKNRTextureTransform } from './gltfexts';
+import { GLTFGPUMaterial } from './gltfrender';
 
 export type { GLTF as TGLTF } from '@gltf-transform/core';
 export type { Extension as TGLTFExtension } from '@gltf-transform/core';
@@ -15,7 +15,8 @@ export type { Extension as TGLTFExtension } from '@gltf-transform/core';
 export type GLTFRef = number;
 
 export interface GLTFDataOptions extends RenderObjectOptions {
-    uri: string
+    uri: string;
+    name?: string;
 }
 
 export class GLTFScene {
@@ -407,6 +408,7 @@ export class GLTFTexutre {
 
     destroy() {
         this.webgpu.texture?.destroy();
+        this.webgpu.texture = null;
     }
 }
 
@@ -518,259 +520,256 @@ export class GLTFSampler {
     }
 }
 
-export class GLTFMaterial {
-    #gltf: GLTF
-    #ref?: GLTFRef
-    #json?: TGLTF.IMaterial
+export class GLTFTextureInfo {
+    textureRef: number = 0
+    texcoordRef?: number
+    textureTransform?: GLTFKNRTextureTransform;
+    ready: boolean = false;
 
-    #alphaMode: TGLTF.MaterialAlphaMode = "OPAQUE"
-    #alphaCutoff: number = 0.5;
-    #doubleSided: boolean = false;
+    constructor(info?: TGLTF.ITextureInfo) {
+        if (info != null) {
+            this.textureRef = info.index;
+            this.texcoordRef = info.texCoord ?? 0;
+            if (info.extensions != null) {
+                if (GLTFExtensions.KHR_texture_transform in info.extensions) {
+                    this.textureTransform = new GLTFKNRTextureTransform(info.extensions.KHR_texture_transform);
+                    if (this.textureTransform.texcoord != null) {
+                        this.texcoordRef = this.textureTransform.texcoord;
+                    }
+                }
+            }
+        }
+    }
+}
+
+export const GLTFMaterialTextures = {
+    BaseColor: "BaseColor",
+    MetallicRoughness: "MetallicRoughness",
+    Normal: "Normal",
+    Emmissive: "Emmissive",
+    Occlusion: "Occlusion"
+} as const;
+export type GLTFMaterialTextures = typeof GLTFMaterialTextures[keyof typeof GLTFMaterialTextures];
+
+export class GLTFMaterial {
+    gltf: GLTF
+    ref?: GLTFRef
+    json?: TGLTF.IMaterial
+
+    alphaMode: TGLTF.MaterialAlphaMode = "OPAQUE"
+    alphaCutoff: number = 0.5;
+    doubleSided: boolean = false;
 
     baseColor: {
         factor: number[];
-        texture?: TGLTF.ITextureInfo;
-        textureTransform?: GLTFKNRTextureTransform;
+        texture?: GLTFTextureInfo;
     } = { factor: [1.0, 1.0, 1.0, 1.0] }
 
     pbr: {
-        metallic: number
-        roughness: number
-        texture?: TGLTF.ITextureInfo;
-        textureTransform?: GLTFKNRTextureTransform;
+        metallic: number;
+        roughness: number;
+        texture?: GLTFTextureInfo;
     } = { metallic: 1.0, roughness: 1.0 }
 
     normal: {
         scale: number;
-        texture?: TGLTF.ITextureInfo;
-        textureTransform?: GLTFKNRTextureTransform;
+        texture?: GLTFTextureInfo;
     } = { scale: 1.0 };
 
     emmissive: {
         factor: number[];
-        texture?: TGLTF.ITextureInfo;
-        textureTransform?: GLTFKNRTextureTransform;
+        texture?: GLTFTextureInfo;
     } = { factor: [0, 0, 0] }
 
     occlusion: {
         strength: number;
-        texture?: TGLTF.ITextureInfo;
-        textureTransform?: GLTFKNRTextureTransform;
+        texture?: GLTFTextureInfo;
     } = { strength: 1.0 }
 
     webgpu: {
-        material?: PbrMaterial
+        material?: GLTFGPUMaterial
     } = {};
 
     constructor(gltf: GLTF, ref?: GLTFRef, json?: TGLTF.IMaterial) {
-        this.#gltf = gltf;
-        this.#ref = ref;
-        this.#json = json;
-        if (this.#json) {
-            const pbrJson = this.#json.pbrMetallicRoughness;
+        this.gltf = gltf;
+        this.ref = ref;
+        this.json = json;
+        if (this.json) {
+            const pbrJson = this.json.pbrMetallicRoughness;
             if (pbrJson) {
 
                 this.baseColor.factor = pbrJson.baseColorFactor ?? [1.0, 1.0, 1.0, 1.0];
-                this.baseColor.texture = pbrJson.baseColorTexture;
-                this.baseColor.textureTransform = this.getTextureTransform(this.baseColor.texture);
-                if (this.baseColor.textureTransform?.texcoord != null) {
-                    this.baseColor.texture.index = this.baseColor.textureTransform?.texcoord;
-                }
+                this.baseColor.texture = this.getTextureInfo(pbrJson.baseColorTexture);
 
                 this.pbr.metallic = pbrJson.metallicFactor ?? 1.0;
                 this.pbr.roughness = pbrJson.roughnessFactor ?? 1.0;
-                this.pbr.texture = pbrJson.metallicRoughnessTexture;
-                this.pbr.textureTransform = this.getTextureTransform(this.pbr.texture);
-                if (this.pbr.textureTransform?.texcoord != null) {
-                    this.pbr.texture.index = this.pbr.textureTransform?.texcoord;
-                }
+                this.pbr.texture = this.getTextureInfo(pbrJson.metallicRoughnessTexture);
             }
 
-            this.normal.scale = this.#json.normalTexture?.scale ?? 1.0;
-            this.normal.texture = this.#json.normalTexture;
-            this.normal.textureTransform = this.getTextureTransform(this.normal.texture);
-            if (this.normal.textureTransform?.texcoord != null) {
-                this.normal.texture.index = this.normal.textureTransform?.texcoord;
-            }
+            this.normal.scale = this.json.normalTexture?.scale ?? 1.0;
+            this.normal.texture = this.getTextureInfo(this.json.normalTexture);
 
-            this.emmissive.factor = this.#json.emissiveFactor ?? [0, 0, 0];
-            this.emmissive.texture = this.#json.emissiveTexture;
-            this.emmissive.textureTransform = this.getTextureTransform(this.emmissive.texture);
-            if (this.emmissive.textureTransform?.texcoord != null) {
-                this.emmissive.texture.index = this.emmissive.textureTransform?.texcoord;
-            }
+            this.emmissive.factor = this.json.emissiveFactor ?? [0, 0, 0];
+            this.emmissive.texture = this.getTextureInfo(this.json.emissiveTexture);
 
-            this.occlusion.strength = this.#json.occlusionTexture?.strength ?? 1.0;
-            this.occlusion.texture = this.#json.occlusionTexture;
-            this.occlusion.textureTransform = this.getTextureTransform(this.occlusion.texture);
-            if (this.occlusion.textureTransform?.texcoord != null) {
-                this.occlusion.texture.index = this.occlusion.textureTransform?.texcoord;
-            }
+            this.occlusion.strength = this.json.occlusionTexture?.strength ?? 1.0;
+            this.occlusion.texture = this.getTextureInfo(this.json.occlusionTexture);
 
-            this.#alphaMode = this.#json.alphaMode;
-            this.#alphaCutoff = this.#json.alphaCutoff;
-            this.#doubleSided = this.#json.doubleSided;
+            this.alphaMode = this.json.alphaMode ?? "OPAQUE";
+            this.alphaCutoff = this.json.alphaCutoff ?? 0.5;
+            this.doubleSided = this.json.doubleSided ?? false;
 
         }
     }
 
-    getTextureTransform(textureInfo?: TGLTF.ITextureInfo): GLTFKNRTextureTransform | null {
-        if (textureInfo == null) {
+    getTextureInfo(info?: TGLTF.ITextureInfo) {
+        if (info == null) {
             return null;
         }
-        if (textureInfo.extensions == null) {
-            return null;
-        }
-        if (GLTFExtensions.KHR_texture_transform in textureInfo.extensions) {
-            return new GLTFKNRTextureTransform(textureInfo.extensions.KHR_texture_transform);
-        }
-
-    }
-    hasBaseColorTexture(): boolean {
-        return this.baseColor.texture != null;
-    }
-    hasMetallicRoughnessTexture(): boolean {
-        return this.pbr.texture != null;
-    }
-    hasNormalTexture(): boolean {
-        return this.normal.texture != null;
-    }
-    hasEmissiveTexture(): boolean {
-        return this.emmissive.texture != null;
-    }
-    hasOcclusionTexture(): boolean {
-        return this.occlusion.texture != null;
+        return new GLTFTextureInfo(info);
     }
 
     getAlphaMode(): TGLTF.MaterialAlphaMode {
-        return this.#alphaMode;
+        return this.alphaMode;
     }
 
     getAlphaCutoff(): number {
-        return this.#alphaCutoff;
+        return this.alphaCutoff;
     }
 
     getDoubleSided(): boolean {
-        return this.#doubleSided;
+        return this.doubleSided;
+    }
+
+    hasTexture(texture: GLTFMaterialTextures): boolean {
+        switch (texture) {
+            case 'BaseColor':
+                return this.baseColor.texture != null;
+            case 'MetallicRoughness':
+                return this.pbr.texture != null;
+            case 'Normal':
+                return this.normal.texture != null;
+            case 'Emmissive':
+                return this.emmissive.texture != null;
+            case 'Occlusion':
+                return this.occlusion.texture != null;
+            default:
+                return false;
+        }
+    }
+
+    hasTextureTransform(texture: GLTFMaterialTextures): boolean {
+        if (!this.hasTexture(texture)) {
+            return false;
+        }
+        switch (texture) {
+            case 'BaseColor':
+                return this.baseColor.texture.textureTransform != null;
+            case 'MetallicRoughness':
+                return this.pbr.texture.textureTransform != null;
+            case 'Normal':
+                return this.normal.texture.textureTransform != null;
+            case 'Emmissive':
+                return this.emmissive.texture.textureTransform != null;
+            case 'Occlusion':
+                return this.occlusion.texture.textureTransform != null;
+            default:
+                return false;
+        }
+    }
+
+    getTextureTransformData(texture: GLTFMaterialTextures) {
+        if (!this.hasTexture(texture)) {
+            return GLTFKNRTextureTransform.getDefaultData();
+        }
+        if (!this.hasTextureTransform(texture)) {
+            return GLTFKNRTextureTransform.getDefaultData();
+        }
+        switch (texture) {
+            case 'BaseColor':
+                return this.baseColor.texture.textureTransform.data;
+            case 'MetallicRoughness':
+                return this.pbr.texture.textureTransform.data;
+            case 'Normal':
+                return this.normal.texture.textureTransform.data;
+            case 'Emmissive':
+                return this.emmissive.texture.textureTransform.data;
+            case 'Occlusion':
+                return this.occlusion.texture.textureTransform.data;
+            default:
+                return GLTFKNRTextureTransform.getDefaultData();
+        }
     }
 
     getTexcoordIndexMap() {
         const idxmap: GLTFMaterialTexCoordIndexMap = {
-            baseColor: this.baseColor.texture?.index,
-            metallicRoughness: this.pbr.texture?.index,
-            normal: this.normal.texture?.index,
-            emmissive: this.emmissive.texture?.index,
-            occlusion: this.occlusion.texture?.index
+            baseColor: this.baseColor.texture?.texcoordRef,
+            metallicRoughness: this.pbr.texture?.texcoordRef,
+            normal: this.normal.texture?.texcoordRef,
+            emmissive: this.emmissive.texture?.texcoordRef,
+            occlusion: this.occlusion.texture?.texcoordRef
         }
         return idxmap;
     }
 
-    getGPUMaterial(device: GPUDevice): PbrMaterial {
+    isTextureReady() {
+        const baseColorReady = this.baseColor.texture == null || this.baseColor.texture.ready;
+        const pbrReady = this.pbr.texture == null || this.pbr.texture.ready;
+        const normalReady = this.normal.texture == null || this.normal.texture.ready;
+        const emmissiveReady = this.emmissive.texture == null || this.emmissive.texture.ready;
+        const occlusionReady = this.occlusion.texture == null || this.occlusion.texture.ready;
+        return baseColorReady && pbrReady && normalReady && emmissiveReady && occlusionReady;
+    }
+
+    getGPUTexture(device: GPUDevice, info?: GLTFTextureInfo): GPUTexture {
+
+        if (info == null) {
+            return this.gltf.getDefaultTexture(device);
+        }
+
+        const gltfTexture = this.gltf.textures[info.textureRef];
+
+        const texture = gltfTexture.getGPUTexture(device);
+
+        if (texture == null) {
+            return this.gltf.getDefaultTexture(device);
+        } else {
+            info.ready = true;
+            return texture;
+        }
+
+    }
+
+    getGPUSampler(device: GPUDevice, info?: GLTFTextureInfo): GPUSampler {
+        if (info == null) {
+            return this.gltf.getDefaultSampler(device);
+        }
+
+        const gltfTexture = this.gltf.textures[info.textureRef];
+
+        const sampler = gltfTexture.getGPUSampler(device);
+
+        if (sampler == null) {
+            return this.gltf.getDefaultSampler(device);
+        } else {
+            return sampler;
+        }
+    }
+
+    getGPUMaterial(device: GPUDevice): GLTFGPUMaterial {
         if (this.webgpu.material == null) {
 
-            let ready: boolean = true;
+            const material = new GLTFGPUMaterial(this);
 
-            const options: PbrMaterialOptions = {
-                ref: this.#ref,
-                externalTexture: true,
-                baseColorFactor: this.baseColor.factor,
-                metallicFactor: this.pbr.metallic,
-                roughnessFactor: this.pbr.roughness,
-                normalScale: this.normal.scale,
-                emmissiveFactor: this.emmissive.factor,
-                occlusionStrength: this.occlusion.strength,
-                alphaMode: this.#alphaMode,
-                alphaCutoff: this.#alphaCutoff,
-                doubleSided: this.#doubleSided
-            }
-
-            //basecolor
-            if (this.hasBaseColorTexture()) {
-                const textureInfo = this.baseColor.texture;
-                const gltfTexture = this.#gltf.textures[textureInfo.index];
-                const gpuTexutre = gltfTexture.getGPUTexture(device);
-                options.baseColorTexCoord = textureInfo.texCoord ?? 0;
-                if (gpuTexutre == null) {
-                    ready = false;
-                } else {
-                    options.baseColorTexture = gpuTexutre;
-                    options.baseColorSampler = gltfTexture.getGPUSampler(device);
-                    options.baseColorTextureTransform = this.baseColor.textureTransform;
-                }
-            }
-            //metal
-            if (this.hasMetallicRoughnessTexture()) {
-                const textureInfo = this.pbr.texture;
-                const gltfTexture = this.#gltf.textures[textureInfo.index];
-                const gpuTexutre = gltfTexture.getGPUTexture(device);
-                options.metallicRoughnessTexCoord = textureInfo.texCoord ?? 0;
-                if (gpuTexutre == null) {
-                    ready = false;
-                } else {
-                    options.metallicRoughnessTexture = gpuTexutre;
-                    options.metallicRoughnessSampler = gltfTexture.getGPUSampler(device);
-                    options.metallicRoughnessTextureTransform = this.pbr.textureTransform;
-                }
-            }
-
-            //normal
-            if (this.hasNormalTexture()) {
-                const textureInfo = this.normal.texture;
-                const gltfTexture = this.#gltf.textures[textureInfo.index];
-                const gpuTexutre = gltfTexture.getGPUTexture(device);
-                options.normalTexCoord = textureInfo.texCoord ?? 0;
-                if (gpuTexutre == null) {
-                    ready = false;
-                } else {
-                    options.normalTexture = gpuTexutre;
-                    options.normalSampler = gltfTexture.getGPUSampler(device);
-                    options.normalTextureTransform = this.normal.textureTransform;
-                }
-            }
-            //emmissive
-            if (this.hasEmissiveTexture()) {
-                const textureInfo = this.emmissive.texture;
-                const gltfTexture = this.#gltf.textures[textureInfo.index];
-                const gpuTexutre = gltfTexture.getGPUTexture(device);
-                options.emmissiveTexCoord = textureInfo.texCoord ?? 0;
-                if (gpuTexutre == null) {
-                    ready = false;
-                } else {
-                    options.emmissiveTexture = gpuTexutre;
-                    options.emmissiveSampler = gltfTexture.getGPUSampler(device);
-                    options.emmissiveTextureTransform = this.emmissive.textureTransform;
-                }
-            }
-            //occlusion
-            if (this.hasOcclusionTexture()) {
-                const textureInfo = this.occlusion.texture;
-                const gltfTexture = this.#gltf.textures[textureInfo.index];
-                const gpuTexutre = gltfTexture.getGPUTexture(device);
-                options.occlusionTexCoord = textureInfo.texCoord ?? 0;
-                if (gpuTexutre == null) {
-                    ready = false;
-                } else {
-                    options.occlusionTexture = gpuTexutre;
-                    options.occlusionSampler = gltfTexture.getGPUSampler(device);
-                    options.occlusionTextureTransform = this.occlusion.textureTransform;
-                }
-            }
-
-            //TODO fix 重复创建uniform
-            const material = new PbrMaterial(options);
-
-            if (ready) {
-                this.webgpu.material = material;
-            }
-
-            return material;
+            this.webgpu.material = material;
 
         }
         return this.webgpu.material;
     }
 
     destroy() {
-        this.webgpu.material.destroy();
+        this.webgpu.material?.destroy();
+        this.webgpu.material = null;
     }
 
 
@@ -1108,11 +1107,13 @@ export class GLTFBuffer {
         for (const buffer of Object.values(this.webgpu.buffers)) {
             buffer.destroy();
         }
+        this.webgpu.buffers = {};
     }
 };
 
+export default class GLTF {
 
-export default class GLTF extends RenderObject {
+    name: string = "glTF";
 
     #uri: string;
     #url: string;
@@ -1138,11 +1139,16 @@ export default class GLTF extends RenderObject {
 
     #defaultMaterial?: GLTFMaterial;
 
+    webgpu: {
+        defaultTexture?: GPUTexture;
+        defaultSampler?: GPUSampler;
+    } = {};
+
     constructor(options: GLTFDataOptions) {
-        super(options);
 
         this.#uri = options.uri;
         this.#url = this.#uri.replace(/\/[^\/]*$/, '/');
+        this.name = options.name ?? "gltf";
 
         this.#loadFromURI(this.#uri).then(json => {
 
@@ -1243,27 +1249,41 @@ export default class GLTF extends RenderObject {
         this.assessors = this.json.accessors?.map((j, i) => new GLTFAccessor(this, i, j));
         this.bufferViews = this.json.bufferViews?.map((j, i) => new GLTFBufferView(this, i, j));
         this.buffers = this.json.buffers?.map((j, i) => new GLTFBuffer(this, i, j));
-
     }
 
-    initWebGPU(gpuinfo: GPUInfo, canvasinfo: CanvasGPUInfo, scene: Scene) {
-        this.webgpu.gpuinfo = gpuinfo;
-        this.webgpu.canvasinfo = canvasinfo;
-        this.webgpu.scene = scene;
+    getDefaultTexture(device: GPUDevice): GPUTexture {
+        if (this.webgpu.defaultTexture == null) {
+            const texture = device.createTexture({
+                label: "pbrMaterial default texture",
+                size: [1, 1, 1],
+                format: 'rgba8unorm',
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+            });
+            device.queue.writeTexture(
+                { texture: texture },
+                new Uint8Array([0, 0, 0, 0]),
+                { bytesPerRow: 4 },
+                { width: 1, height: 1 }
+            );
+            this.webgpu.defaultTexture = texture;
+        }
+        return this.webgpu.defaultTexture;
     }
 
-    refreshVertexBuffers(force: boolean): void {
-        throw new Error('Method not implemented.');
+    getDefaultSampler(device: GPUDevice): GPUSampler {
+        if (this.webgpu.defaultSampler == null) {
+            const sampler = device.createSampler({
+                label: "pbrMaterial default sampler",
+                minFilter: 'linear',
+                magFilter: 'linear',
+                addressModeU: 'repeat',
+                addressModeV: 'repeat'
+            });
+            this.webgpu.defaultSampler = sampler;
+        }
+        return this.webgpu.defaultSampler;
     }
-    refreshUniforms(force: boolean): void {
-        throw new Error('Method not implemented.');
-    }
-    createPipeline(force: boolean): void {
-        throw new Error('Method not implemented.');
-    }
-    draw(pass: GPURenderPassEncoder): void {
-        throw new Error('Method not implemented.');
-    }
+
     destroy(): void {
         for (const buffer of this.buffers) {
             buffer.destroy();
@@ -1276,6 +1296,10 @@ export default class GLTF extends RenderObject {
         }
         for (const material of this.materials) {
             material.destroy();
+        }
+        if (this.webgpu.defaultTexture != null) {
+            this.webgpu.defaultTexture.destroy();
+            this.webgpu.defaultTexture = null;
         }
     }
 

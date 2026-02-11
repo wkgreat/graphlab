@@ -14,6 +14,9 @@ import GLTFRender from '../../commons/format/gltf/gltfrender';
 import type { NumArr3 } from '../../commons/defines';
 import { random, randomSign } from '../../commons/utils';
 import { Pane } from 'tweakpane';
+import EnvironmentMap from '../../commons/envmap';
+
+import EnvironmentMapImageURI from '/data/cubemap/modern_evening_stree/modern_evening_street_4k.ktx2?url';
 
 export class GLTFDemo {
 
@@ -45,23 +48,17 @@ export class GLTFDemo {
 
     axis: Axis | null = null;
 
+    envmap?: EnvironmentMap;
+
     gltfs: { gltf: GLTF, scene: GLTFRef, matrix: mat4 }[] = [];
 
     gltfRender: GLTFRender;
 
     readyCallbacks: ((MeshDemo) => void)[] = []
 
-    pane = new Pane({ title: "参数控制" });
-
-    paneParams = {
-        rotate: {
-            x: 0,
-            y: 0,
-            z: 0
-        }
-    }
-
     matrix: mat4 = mat4.create();
+
+    pane?: Pane
 
     constructor() {
 
@@ -96,7 +93,7 @@ export class GLTFDemo {
 
             const from = [2, 2, 4, 1];
             const to = [0, 0, 0, 1];
-            const up = [0, 0, 1, 0];
+            const up = [0, 1, 0, 0];
 
             this.camera = new Camera(from, to, up);
 
@@ -112,23 +109,34 @@ export class GLTFDemo {
                 this.scene.addLight(new PointLight(pos, [1, 1, 1, 1]));
             }
 
+            // 世界坐标系为ECEF，需要将ECEF变换为与NDC轴方向一致的坐标系
+            const worldmtx = mat4.create();
+            mat4.rotateX(worldmtx, worldmtx, -Math.PI / 2);
+            mat4.rotateZ(worldmtx, worldmtx, -Math.PI / 2);
+            this.scene.setWorldMatrix(worldmtx);
+
             this.scene.initWebGPU(this.gpuInfo, this.canvasInfo);
             this.scene.refreshViewport(this.canvasInfo.canvas.width, this.canvasInfo.canvas.height);
 
             this.cameraMouseCtrl = new CameraMouseControl(this.camera, this.canvasInfo.canvas);
-
             this.cameraMouseCtrl.enable();
+
+            EnvironmentMap.fromKtx("modern_evening_street", EnvironmentMapImageURI).then(envmap => {
+                this.envmap = envmap;
+                this.envmap.initWebGPU(this.gpuInfo, this.canvasInfo, this.scene);
+            })
 
             //gltf
             this.gltfRender = new GLTFRender(this.gpuInfo, this.canvasInfo, this.scene);
 
             //objects
-            // this.ground = new Ground({
-            //     xsize: 100,
-            //     ysize: 100,
-            //     density: 2
-            // });
-            // this.ground.initWebGPU(this.gpuInfo, this.canvasInfo);
+            this.ground = new Ground({
+                xsize: 10,
+                ysize: 10,
+                density: 2,
+                worldmtx
+            });
+            this.ground.initWebGPU(this.gpuInfo, this.canvasInfo);
 
             this.axis = new Axis({
                 xlim: [0, 50],
@@ -152,8 +160,6 @@ export class GLTFDemo {
 
             this.resizeObserver.observe(canvasInfo.canvas);
 
-            this.setPane();
-
             this.ready = true;
 
             this.readyCallbacks.forEach(f => f(this));
@@ -162,6 +168,10 @@ export class GLTFDemo {
             this.ready = false;
             console.error(e);
         })
+    }
+
+    setPane(pane: Pane) {
+        this.pane = pane;
     }
 
     onReady(f: (MeshDemo) => void) {
@@ -201,7 +211,19 @@ export class GLTFDemo {
         return descriptor;
     }
 
-    addGLTF(info: { gltf: GLTF, scene: GLTFRef, matrix: mat4 }) {
+    clearGLTFModels() {}
+
+    clearAndDestroyGLTFModels() {
+        for (const gltf of this.gltfs) {
+            gltf.gltf.destroy();
+        }
+        while (this.gltfs.length > 0) {
+            const gltf = this.gltfs.pop();
+            gltf.gltf.destroy();
+        }
+    }
+
+    addGLTFModel(info: { gltf: GLTF, scene: GLTFRef, matrix: mat4 }) {
         this.gltfs.push(info);
     }
 
@@ -214,9 +236,13 @@ export class GLTFDemo {
             const pass = encoder.beginRenderPass(this.getRenderPassDescriptor());
             this.firstpass = false;
 
-            if (this.ground) {
-                this.ground.draw(this.gpuInfo, this.camera, this.projection, pass);
+            if (this.envmap != null) {
+                this.envmap.draw(pass);
             }
+
+            // if (this.ground) {
+            //     this.ground.draw(this.gpuInfo, this.camera, this.projection, pass);
+            // }
 
             if (this.axis) {
                 this.axis.draw(pass);
@@ -247,43 +273,5 @@ export class GLTFDemo {
         requestAnimationFrame(this.render.bind(this));
 
     }
-
-    setPane() {
-        const modelFolder = this.pane.addFolder({
-            title: "模型设置",
-            expanded: true
-        });
-        modelFolder.addBinding(this.paneParams.rotate, "x", {
-            label: "rotate x",
-            min: 0, max: 360, step: 1,
-        }).on("change", (e) => {
-            const matrix = mat4.create();
-            mat4.rotateX(matrix, matrix, e.value * Math.PI / 180);
-            mat4.rotateY(matrix, matrix, this.paneParams.rotate.y * Math.PI / 180);
-            mat4.rotateZ(matrix, matrix, this.paneParams.rotate.z * Math.PI / 180);
-            this.matrix = matrix;
-        });
-        modelFolder.addBinding(this.paneParams.rotate, "y", {
-            label: "rotate y",
-            min: 0, max: 360, step: 1,
-        }).on("change", (e) => {
-            const matrix = mat4.create();
-            mat4.rotateX(matrix, matrix, this.paneParams.rotate.x * Math.PI / 180);
-            mat4.rotateY(matrix, matrix, e.value * Math.PI / 180);
-            mat4.rotateZ(matrix, matrix, this.paneParams.rotate.z * Math.PI / 180);
-            this.matrix = matrix;
-        });
-        modelFolder.addBinding(this.paneParams.rotate, "z", {
-            label: "rotate z",
-            min: 0, max: 360, step: 1,
-        }).on("change", (e) => {
-            const matrix = mat4.create();
-            mat4.rotateX(matrix, matrix, this.paneParams.rotate.x * Math.PI / 180);
-            mat4.rotateY(matrix, matrix, this.paneParams.rotate.y * Math.PI / 180);
-            mat4.rotateZ(matrix, matrix, e.value * Math.PI / 180);
-            this.matrix = matrix;
-        });
-    }
-
 
 }

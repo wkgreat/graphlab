@@ -1,4 +1,4 @@
-import { Children, type FC } from "react";
+import { Children, useEffect, useState, type FC } from "react";
 import 'react-complex-tree/lib/style.css';
 import './tree.css';
 import { UncontrolledTreeEnvironment, Tree, StaticTreeDataProvider, type TreeItemIndex, type TreeItem } from 'react-complex-tree';
@@ -155,8 +155,6 @@ function parseGLTFData(gltf: GLTF | null): Record<TreeItemIndex, GLTFTreeItem<an
         data[parent].children.push(key);
     }
 
-    console.log(data);
-
     return data;
 }
 
@@ -194,6 +192,7 @@ const GLTFTreeView: FC<GLTFTreeViewProps> = (props) => {
         }}>
             <div style={{ minWidth: '100%', display: 'inline-block' }}>
                 <UncontrolledTreeEnvironment
+                    key={props.gltf?.name ?? "null"}
                     dataProvider={new StaticTreeDataProvider(parseGLTFData(props.gltf))}
                     getItemTitle={(item) => item.data}
                     viewState={{

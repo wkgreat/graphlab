@@ -26,7 +26,7 @@ export class GLTFKNRTextureTransform {
         this.texcoord = json.texCoord;
     }
 
-    get uniformObject() {
+    get data() {
         return {
             offset: this.offset,
             rotation: this.rotation,
@@ -34,7 +34,7 @@ export class GLTFKNRTextureTransform {
         }
     }
 
-    static getDefaultUniformObject() {
+    static getDefaultData() {
         return {
             offset: [0, 0],
             rotation: 0,
