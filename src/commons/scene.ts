@@ -3,10 +3,12 @@ import type Camera from "./camera";
 import type Projection from "./projection";
 import { Ray } from "./objects";
 import type PointLight from "./light";
-import type { CanvasGPUInfo, GPUInfo } from "./webgpuUtils";
+import { bool2num, type CanvasGPUInfo, type GPUInfo } from "./webgpuUtils";
 import sceneCode from "./shader/scene.wgsl";
 import { makeShaderDataDefinitions, makeStructuredView, type ShaderDataDefinitions } from "webgpu-utils";
 import { vec4t3 } from "./matrix";
+import type IBL from "./ibl";
+import type EnvironmentMap from "./envmap";
 
 export default class Scene {
 
@@ -17,6 +19,7 @@ export default class Scene {
     #height: number = 0;
     lights: PointLight[] = [];
     readonly MAX_NUM_LIGHTS = 16;
+    ibl?: IBL;
 
     #webgpu: {
         gpuinfo?: GPUInfo,
@@ -25,6 +28,10 @@ export default class Scene {
         uniform?: GPUBuffer,
         layout?: GPUBindGroupLayout
         bindgroup?: GPUBindGroup
+        defaultCubeTexture?: GPUTexture
+        defaultCubeSampler?: GPUSampler
+        default2DTexture?: GPUTexture
+        default2DSampler?: GPUSampler
     } = {};
 
     constructor(camera: Camera, projection: Projection) {
@@ -38,6 +45,29 @@ export default class Scene {
 
     addLight(light: PointLight) {
         this.lights.push(light);
+    }
+
+    setIBL(ibl: IBL) {
+        this.ibl = ibl;
+        if (this.#webgpu.gpuinfo != null && ibl.webgpu.gpuinfo == null) {
+            ibl.initWebGPU(this.#webgpu.gpuinfo, this.#webgpu.canvasinfo, this);
+        }
+    }
+
+    canEnv() {
+        return this.ibl != null && this.ibl.canEnv();
+    }
+
+    canIBL() {
+        return this.ibl != null && this.ibl.canIBL();
+    }
+
+    getEnv(): EnvironmentMap | null {
+        if (this.canEnv()) {
+            return this.ibl.environment;
+        } else {
+            return null;
+        }
     }
 
     refreshViewport(width: number, height: number) {
@@ -131,6 +161,14 @@ export default class Scene {
                 viewportmtxInv: this.viewportMatrixInv
             }
 
+            const sh = this.getIBLsh();
+
+            const iblData = {
+                canIBL: bool2num(this.canIBL()),
+                prescaled: bool2num(this.canIBL() && this.ibl.sh.prescale),
+                sh: sh
+            }
+
             const nLights = Math.min(this.MAX_NUM_LIGHTS, this.lights.length);
             const lightData = [];
             for (let i = 0; i < nLights; ++i) {
@@ -145,6 +183,7 @@ export default class Scene {
                 camera: cameraData,
                 projection: projectionData,
                 viewport: viewportData,
+                ibl: iblData,
                 numLights: nLights,
                 lights: lightData
             }
@@ -170,7 +209,39 @@ export default class Scene {
                             buffer: {
                                 type: 'uniform'
                             }
-                        }
+                        },
+                        {
+                            binding: 1,
+                            visibility: GPUShaderStage.FRAGMENT,
+                            texture: {
+                                viewDimension: 'cube',
+                                sampleType: 'float',
+                                multisampled: false,
+                            },
+                        },
+                        {
+                            binding: 2,
+                            visibility: GPUShaderStage.FRAGMENT,
+                            sampler: {
+                                type: 'filtering',
+                            },
+                        },
+                        {
+                            binding: 3,
+                            visibility: GPUShaderStage.FRAGMENT,
+                            texture: {
+                                viewDimension: '2d',
+                                sampleType: 'float',
+                                multisampled: false,
+                            },
+                        },
+                        {
+                            binding: 4,
+                            visibility: GPUShaderStage.FRAGMENT,
+                            sampler: {
+                                type: 'filtering',
+                            },
+                        },
                     ]
                 });
             }
@@ -179,17 +250,88 @@ export default class Scene {
         return null;
     }
 
+    getPrefilterTexture() {
+        let texture: GPUTexture;
+        if (this.canIBL()) {
+            texture = this.ibl.getPrefilterTexture();
+        }
+        if (texture == null) {
+            const device = this.#webgpu.gpuinfo?.device;
+            texture = this.getDefaultCubeTexture(device);
+        }
+        return texture;
+    }
+
+    getPrefilterSampler() {
+        let sampler: GPUSampler;
+        if (this.canIBL()) {
+            sampler = this.ibl.getPerfilterSampler();
+        }
+        if (sampler == null) {
+            const device = this.#webgpu.gpuinfo?.device;
+            sampler = this.getDefaultCubeSampler(device);
+        }
+        return sampler;
+    }
+
+    getLUTTexture() {
+        let texture: GPUTexture;
+        if (this.canIBL()) {
+            texture = this.ibl.getLUTTexture();
+        }
+        if (texture == null) {
+            const device = this.#webgpu.gpuinfo?.device;
+            texture = this.getDefault2DTexture(device);
+        }
+        return texture;
+    }
+
+    getLUTSampler() {
+        let sampler: GPUSampler;
+        if (this.canIBL()) {
+            sampler = this.ibl.getLUTSampler();
+        }
+        if (sampler == null) {
+            const device = this.#webgpu.gpuinfo?.device;
+            sampler = this.getDefault2DSampler(device);
+        }
+        return sampler;
+    }
+
+    getIBLsh() {
+        if (this.canIBL()) {
+            const res = this.ibl.sh.parameters;
+            return res;
+        } else {
+            return Array(9).fill([1, 1, 1]);
+        }
+    }
+
     get bindGroup() {
         if (this.#webgpu.gpuinfo) {
-            if (!this.#webgpu.bindgroup) {
-                const device = this.#webgpu.gpuinfo.device;
-                this.#webgpu.bindgroup = device.createBindGroup({
-                    layout: this.bindGroupLayout,
-                    entries: [
-                        { binding: 0, resource: { buffer: this.#webgpu.uniform } }
-                    ]
-                });
-            }
+            const device = this.#webgpu.gpuinfo.device;
+            const prefilterTexture = this.getPrefilterTexture();
+            const prefilterSampler = this.getPrefilterSampler();
+            const lutTexture = this.getLUTTexture();
+            const lutSampler = this.getLUTSampler();
+            this.#webgpu.bindgroup = device.createBindGroup({
+                layout: this.bindGroupLayout,
+                entries: [
+                    { binding: 0, resource: { buffer: this.#webgpu.uniform } },
+                    {
+                        binding: 1, resource: prefilterTexture.createView({
+                            dimension: 'cube'
+                        })
+                    },
+                    { binding: 2, resource: prefilterSampler },
+                    {
+                        binding: 3, resource: lutTexture.createView({
+                            dimension: '2d'
+                        })
+                    },
+                    { binding: 4, resource: lutSampler },
+                ]
+            });
             return this.#webgpu.bindgroup;
         }
         return null;
@@ -197,5 +339,84 @@ export default class Scene {
 
     get uniform() {
         return this.#webgpu.uniform;
+    }
+
+    getDefaultCubeTexture(device: GPUDevice): GPUTexture {
+        if (this.#webgpu.defaultCubeTexture == null) {
+            const texture = device.createTexture({
+                label: "default texture",
+                size: [1, 1, 6],
+                format: 'rgba8unorm',
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+            });
+            device.queue.writeTexture(
+                { texture: texture },
+                new Uint8Array([0, 0, 0, 0]),
+                { bytesPerRow: 4 },
+                { width: 1, height: 1 }
+            );
+            this.#webgpu.defaultCubeTexture = texture;
+        }
+        return this.#webgpu.defaultCubeTexture;
+    }
+
+    getDefaultCubeSampler(device: GPUDevice): GPUSampler {
+        if (this.#webgpu.defaultCubeSampler == null) {
+            const sampler = device.createSampler({
+                label: "default sampler",
+                minFilter: 'linear',
+                magFilter: 'linear',
+                addressModeU: 'repeat',
+                addressModeV: 'repeat'
+            });
+            this.#webgpu.defaultCubeSampler = sampler;
+        }
+        return this.#webgpu.defaultCubeSampler;
+    }
+
+    getDefault2DTexture(device: GPUDevice): GPUTexture {
+        if (this.#webgpu.default2DTexture == null) {
+            const texture = device.createTexture({
+                label: "default texture",
+                size: [1, 1, 1],
+                format: 'rgba8unorm',
+                dimension: '2d',
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+            });
+            device.queue.writeTexture(
+                { texture: texture },
+                new Uint8Array([0, 0, 0, 0]),
+                { bytesPerRow: 4 },
+                { width: 1, height: 1 }
+            );
+            this.#webgpu.default2DTexture = texture;
+        }
+        return this.#webgpu.default2DTexture;
+    }
+
+    getDefault2DSampler(device: GPUDevice): GPUSampler {
+        if (this.#webgpu.default2DSampler == null) {
+            const sampler = device.createSampler({
+                label: "default sampler",
+                minFilter: 'linear',
+                magFilter: 'linear',
+                addressModeU: 'repeat',
+                addressModeV: 'repeat'
+            });
+            this.#webgpu.default2DSampler = sampler;
+        }
+        return this.#webgpu.default2DSampler;
+    }
+
+    destroy() {
+        if (this.#webgpu.uniform) {
+            this.#webgpu.uniform.destroy();
+        }
+        if (this.#webgpu.defaultCubeTexture) {
+            this.#webgpu.defaultCubeTexture.destroy();
+        }
+        if (this.#webgpu.default2DTexture) {
+            this.#webgpu.default2DTexture.destroy();
+        }
     }
 };

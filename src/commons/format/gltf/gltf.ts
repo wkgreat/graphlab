@@ -6,7 +6,7 @@ import RenderObject, { type RenderObjectOptions, type RenderObjectWebGPU } from 
 import type Scene from '../../scene';
 import type { CanvasGPUInfo, GPUInfo } from '../../webgpuUtils';
 import { arrayBufferToImageBitmap } from '../../image';
-import { GLTFExtensions, GLTFKNRTextureTransform } from './gltfexts';
+import { GLTFExtensions, GLTFKNRMaterialsTransmission, GLTFKNRTextureTransform, type GLTFKNRMaterialsTransmissionProps } from './gltfexts';
 import { GLTFGPUMaterial } from './gltfrender';
 
 export type { GLTF as TGLTF } from '@gltf-transform/core';
@@ -590,6 +590,8 @@ export class GLTFMaterial {
         material?: GLTFGPUMaterial
     } = {};
 
+    transmission?: GLTFKNRMaterialsTransmission
+
     constructor(gltf: GLTF, ref?: GLTFRef, json?: TGLTF.IMaterial) {
         this.gltf = gltf;
         this.ref = ref;
@@ -618,6 +620,11 @@ export class GLTFMaterial {
             this.alphaMode = this.json.alphaMode ?? "OPAQUE";
             this.alphaCutoff = this.json.alphaCutoff ?? 0.5;
             this.doubleSided = this.json.doubleSided ?? false;
+
+            if (this.json.extensions != null && GLTFExtensions.KHR_materials_transmission in this.json.extensions) {
+                this.transmission = new GLTFKNRMaterialsTransmission(
+                    json.extensions[GLTFExtensions.KHR_materials_transmission] as GLTFKNRMaterialsTransmissionProps);
+            }
 
         }
     }

@@ -138,11 +138,12 @@ export function createTexture2DFromTypedArray(device: GPUDevice, data: Uint8Arra
 
 // 常用格式映射表 (Vulkan -> WebGPU)
 const VK_FORMAT_MAP: Record<number, { format: GPUTextureFormat; bpp: number }> = {
+    83: { format: 'rg16float', bpp: 4 }, //VK_FORMAT_R16G16_SFLOAT
+    43: { format: 'rgba8unorm-srgb', bpp: 4 }, // VK_FORMAT_R8G8B8A8_SRGB
+    37: { format: 'rgba8unorm', bpp: 4 },   // VK_FORMAT_R8G8B8A8_UNORM
     97: { format: 'rgba16float', bpp: 8 },   // VK_FORMAT_R16G16B16A16_SFLOAT
     109: { format: 'rgba32float', bpp: 16 },  // VK_FORMAT_R32G32B32A32_SFLOAT
     106: { format: 'rgba32float', bpp: 16 }, // VK_FORMAT_R32G32B32_SFLOAT
-    37: { format: 'rgba8unorm', bpp: 4 },   // VK_FORMAT_R8G8B8A8_UNORM
-    43: { format: 'rgba8unorm-srgb', bpp: 4 }, // VK_FORMAT_R8G8B8A8_SRGB
 };
 
 /**
@@ -165,8 +166,6 @@ export function createCubeTextureFromKTX2(device: GPUDevice, ktx: KTX2Container,
     const width = ktx.pixelWidth;
     const height = ktx.pixelHeight;
     const mipCount = ktx.levels.length;
-
-    console.log(formatConfig);
 
     // 2. 创建 Cubemap 纹理
     const texture = device.createTexture({
@@ -209,6 +208,42 @@ export function createCubeTextureFromKTX2(device: GPUDevice, ktx: KTX2Container,
                 [levelWidth, levelHeight]
             );
         }
+    }
+
+    return texture;
+}
+
+export function createTexture2DFromKTX2(device: GPUDevice, ktx: KTX2Container): GPUTexture | null {
+
+
+    // 4. 获取纹理基本信息
+    const { pixelWidth, pixelHeight, levels, vkFormat } = ktx;
+
+    const width = pixelWidth;
+
+    const height = pixelHeight;
+
+    const { format, bpp } = VK_FORMAT_MAP[vkFormat];
+
+    console.log(format);
+
+    const texture = device.createTexture({
+        size: [pixelWidth, pixelHeight],
+        format: format,
+        dimension: '2d',
+        mipLevelCount: levels.length,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+    });
+
+    for (let level = 0; level < ktx.levelCount; ++level) {
+        const levelData = ktx.levels[level].levelData;
+
+        device.queue.writeTexture(
+            { texture, mipLevel: level },
+            levelData as unknown as BufferSource,
+            { bytesPerRow: bpp * width },
+            [width >> level, height >> level, 1]
+        );
     }
 
     return texture;

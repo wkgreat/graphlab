@@ -16,7 +16,8 @@ import { random, randomSign } from '../../commons/utils';
 import { Pane } from 'tweakpane';
 import EnvironmentMap from '../../commons/envmap';
 
-import EnvironmentMapImageURI from '/data/cubemap/modern_evening_stree/modern_evening_street_4k.ktx2?url';
+import iblURL from '/data/ibl/modern_evening_stree/ibl.json?url';
+import IBL from '../../commons/ibl';
 
 export class GLTFDemo {
 
@@ -101,13 +102,14 @@ export class GLTFDemo {
 
             this.scene = new Scene(this.camera, this.projection);
 
-            for (let i = 0; i < 10; ++i) {
-                const pos: NumArr3 = [
-                    random(100, 200) * randomSign(),
-                    random(100, 200) * randomSign(),
-                    random(100, 200) * randomSign()]
-                this.scene.addLight(new PointLight(pos, [1, 1, 1, 1]));
-            }
+            // lights
+            // for (let i = 0; i < 10; ++i) {
+            //     const pos: NumArr3 = [
+            //         random(100, 200) * randomSign(),
+            //         random(100, 200) * randomSign(),
+            //         random(100, 200) * randomSign()]
+            //     this.scene.addLight(new PointLight(pos, [1, 1, 1, 1]));
+            // }
 
             // 世界坐标系为ECEF，需要将ECEF变换为与NDC轴方向一致的坐标系
             const worldmtx = mat4.create();
@@ -118,13 +120,19 @@ export class GLTFDemo {
             this.scene.initWebGPU(this.gpuInfo, this.canvasInfo);
             this.scene.refreshViewport(this.canvasInfo.canvas.width, this.canvasInfo.canvas.height);
 
+            // IBL
+            IBL.loadFromURI(iblURL).then(ibl => {
+                ibl.initWebGPU(this.gpuInfo, this.canvasInfo, this.scene);
+                this.scene.setIBL(ibl);
+            })
+
             this.cameraMouseCtrl = new CameraMouseControl(this.camera, this.canvasInfo.canvas);
             this.cameraMouseCtrl.enable();
 
-            EnvironmentMap.fromKtx("modern_evening_street", EnvironmentMapImageURI).then(envmap => {
-                this.envmap = envmap;
-                this.envmap.initWebGPU(this.gpuInfo, this.canvasInfo, this.scene);
-            })
+            // EnvironmentMap.fromKtx("modern_evening_street", EnvironmentMapImageURI).then(envmap => {
+            //     this.envmap = envmap;
+            //     this.envmap.initWebGPU(this.gpuInfo, this.canvasInfo, this.scene);
+            // })
 
             //gltf
             this.gltfRender = new GLTFRender(this.gpuInfo, this.canvasInfo, this.scene);
@@ -236,8 +244,8 @@ export class GLTFDemo {
             const pass = encoder.beginRenderPass(this.getRenderPassDescriptor());
             this.firstpass = false;
 
-            if (this.envmap != null) {
-                this.envmap.draw(pass);
+            if (this.scene.canEnv()) {
+                this.scene.getEnv().draw(pass);
             }
 
             // if (this.ground) {

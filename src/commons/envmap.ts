@@ -50,7 +50,6 @@ export default class EnvironmentMap {
         envmap.name = name;
         envmap.ktx = ktx;
 
-
         return envmap;
     }
 

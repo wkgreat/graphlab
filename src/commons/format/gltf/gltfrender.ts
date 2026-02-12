@@ -7,6 +7,7 @@ import { assertNotNull } from "../../utils";
 import { bool2num, type CanvasGPUInfo, type GPUInfo } from "../../webgpuUtils";
 import type GLTF from "./gltf";
 import { GLTFAccessor, GLTFAccessorCompType, GLTFAttributres, GLTFMaterial, GLTFMaterialTextures, type GLTFMesh, type GLTFNode, type GLTFPrimitive, type GLTFScene, type TGLTF } from "./gltf";
+import { showWGSL } from "../../debug";
 
 interface GLTFPipelineAttributeOptions {
     exists: boolean;
@@ -757,7 +758,13 @@ export class GLTFGPUMaterial {
                     textureTransform: this.material.getTextureTransformData(GLTFMaterialTextures.Occlusion),
                 },
                 alphaMode: AlphaModeCodes[this.material.getAlphaMode()],
-                alphaCutoff: this.material.getAlphaCutoff()
+                alphaCutoff: this.material.getAlphaCutoff(),
+
+                //TODO 支持基于物理的transmission
+                hasTransmission: bool2num(this.material.transmission != null),
+                transmissionFactor: this.material.transmission != null ? this.material.transmission.factor : 0
+
+
             };
 
             view.set(data);

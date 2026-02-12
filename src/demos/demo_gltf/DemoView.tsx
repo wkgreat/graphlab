@@ -1,16 +1,20 @@
 import { Box } from "@radix-ui/themes";
 import type { FC } from "react";
-import GLTFTreeView from "./GLTFTreeView";
 import React, { useEffect } from "react";
-import { GLTFDemo } from "./demo";
 import GLTF, { type GLTFRef } from "../../commons/format/gltf/gltf";
+import { GLTFDemo } from "./demo";
+import GLTFTreeView from "./GLTFTreeView";
 
-import DamagedHelmetGLTFURL from '/data/mesh/gltf/DamagedHelmet/DamagedHelmet.gltf?url';
-import ChronographWatchGLTFURL from '/data/mesh/gltf/ChronographWatch/ChronographWatch.gltf?url';
-import CarConceptGLTFURL from '/data/mesh/gltf/CarConcept/CarConcept.gltf?url';
-import DiffuseTransmissionTeacupGLTFURL from '/data/mesh/gltf/DiffuseTransmissionTeacup/DiffuseTransmissionTeacup.gltf?url';
 import { mat4 } from "gl-matrix";
 import { Pane } from "tweakpane";
+import CarConceptGLTFURL from '/data/mesh/gltf/CarConcept/CarConcept.gltf?url';
+import ChronographWatchGLTFURL from '/data/mesh/gltf/ChronographWatch/ChronographWatch.gltf?url';
+import DamagedHelmetGLTFURL from '/data/mesh/gltf/DamagedHelmet/DamagedHelmet.gltf?url';
+import DiffuseTransmissionTeacupGLTFURL from '/data/mesh/gltf/DiffuseTransmissionTeacup/DiffuseTransmissionTeacup.gltf?url';
+
+import modern_evening_stree_url from '/data/ibl/modern_evening_stree/ibl.json?url';
+import ferndale_studio_04_url from '/data/ibl/ferndale_studio_04/ibl.json?url';
+import IBL from "../../commons/ibl";
 
 interface GLTFSource {
     name: string
@@ -19,12 +23,16 @@ interface GLTFSource {
     matrix: mat4
 }
 
-const GLTFResources: { [key: string]: GLTFSource } = {
+const GLTFResources: Record<string, GLTFSource> = {
     DamagedHelmet: {
         name: "DamagedHelmet",
         uri: DamagedHelmetGLTFURL,
         scene: 0,
-        matrix: mat4.create()
+        matrix: (() => {
+            const m = mat4.create();
+            mat4.rotateX(m, m, Math.PI / 2);
+            return m;
+        })()
     },
     ChronographWatch: {
         name: "ChronographWatch",
@@ -36,11 +44,7 @@ const GLTFResources: { [key: string]: GLTFSource } = {
         name: "CarConcept",
         uri: CarConceptGLTFURL,
         scene: 0,
-        matrix: (() => {
-            const m = mat4.create();
-            mat4.rotateX(m, m, -Math.PI / 2);
-            return m;
-        })()
+        matrix: mat4.create()
     },
     DiffuseTransmissionTeacup: {
         name: "DiffuseTransmissionTeacup",
@@ -48,8 +52,25 @@ const GLTFResources: { [key: string]: GLTFSource } = {
         scene: 0,
         matrix: (() => {
             const m = mat4.create();
+            mat4.rotateX(m, m, Math.PI / 2);
             return m;
         })()
+    }
+}
+
+interface IBLSource {
+    name: string;
+    uri: string;
+}
+
+const IBLSources: Record<string, IBLSource> = {
+    modern_evening_stree: {
+        name: "modern_evening_stree",
+        uri: modern_evening_stree_url
+    },
+    ferndale_studio_04: {
+        name: "ferndale_studio_04",
+        uri: ferndale_studio_04_url
     }
 }
 
@@ -70,17 +91,18 @@ const DemoView: FC<DemoViewProps> = (props) => {
         }
         if (paneDataRef.current == null) {
             paneDataRef.current = {
-                gltf: GLTFResources.DamagedHelmet.name
+                gltf: GLTFResources.DamagedHelmet.name,
+                ibl: IBLSources.modern_evening_stree.name
             }
         }
         if (paneRef.current == null) {
             paneRef.current = new Pane({
                 title: "设置"
             });
-            const options = Object.fromEntries(Object.entries(GLTFResources).map(([k, v]) => [k, k]));
+            const gltfOptions = Object.fromEntries(Object.entries(GLTFResources).map(([k, v]) => [k, k]));
             paneRef.current.addBinding(paneDataRef.current, "gltf" as never, {
                 label: "glTF模型",
-                options: options
+                options: gltfOptions
             }).on("change", (e) => {
                 const resource = GLTFResources[e.value];
                 const gltf = new GLTF({ uri: resource.uri, name: resource.name });
@@ -92,6 +114,19 @@ const DemoView: FC<DemoViewProps> = (props) => {
                         ...resource
                     });
                 })
+            });
+
+            const iblOptions = Object.fromEntries(Object.entries(IBLSources).map(([k, v]) => [k, k]));
+            paneRef.current.addBinding(paneDataRef.current, "ibl" as never, {
+                label: "IBL环境图",
+                options: iblOptions
+            }).on("change", (e) => {
+                const source = IBLSources[e.value];
+                IBL.loadFromURI(source.uri).then(ibl => {
+                    const oldIBL = demoRef.current.scene.ibl;
+                    demoRef.current.scene.setIBL(ibl);
+                    oldIBL.destroy();
+                });
             })
         }
         demoRef.current.setPane(paneRef.current);

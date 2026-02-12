@@ -66,14 +66,14 @@ fn getTexcoord(input:VSInput, idx: u32) -> vec2f {
 }
 
 @vertex fn vs(input: VSInput) -> VSOutput {
-    let worldpos = model.modelmtx * vec4f(input.position, 1.0);
+    let worldpos = scene.worldmtx * model.modelmtx * vec4f(input.position, 1.0);
     let ndcpos = scene.projection.projmtx * scene.camera.viewmtx * worldpos;
     var output: VSOutput;
     output.position = ndcpos;
     output.worldpos = worldpos.xyz;
-    output.normal = (model.normalmtx * vec4f(input.normal,0.0)).xyz;
+    output.normal = (scene.worldmtx *model.normalmtx * vec4f(input.normal,0.0)).xyz;
     var tangent4 = vec4f(input.tangent.xyz,0.0);
-    tangent4 = model.normalmtx * tangent4;
+    tangent4 = scene.worldmtx * model.normalmtx * tangent4;
     tangent4.w = input.tangent.w;
     output.tangent = tangent4;
     output.baseColorTexcoord = getTexcoord(input, model.texcoordOrder.baseColor);

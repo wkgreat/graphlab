@@ -1,16 +1,19 @@
 #include ./math.wgsl
+#include ./hdr.wgsl
+
+//TODO 当前transmission临时按透明度实现，支持基于物理的transmission
 
 struct TextureTransform {
     offset: vec2f,
     rotation: f32,
     scale: vec2f
-}
+};
 
 struct TextureInfo {
     hasTexture: u32,
     hasTextureTransform: u32,
     textureTransform: TextureTransform
-}
+};
 
 struct PbrMaterialUniform {
     baseColorFactor: vec4f,
@@ -25,8 +28,12 @@ struct PbrMaterialUniform {
     occlusionStrength: f32,
     occlusionTexture: TextureInfo,
     alphaMode: u32,
-    alphaCutoff: f32
-}
+    alphaCutoff: f32,
+
+    hasTransmission: u32,
+    transmissionFactor: f32
+    // transmissionTexture: TextureInfo //TODO 支持 transmission texture
+};
 
 const ALPHAMODE_OPAQUE: u32 = 0;
 const ALPHAMODE_MASK: u32 = 1;
@@ -162,16 +169,18 @@ fn getPbrMaterialColor(
         emmissive = emmissive * vec4f(pbrMaterial.emmissiveFactor,1.0);
     }
 
-    var occlusion:vec4f = vec4f(1,1,1,1);
+    var occlusion:f32 = 1.0;
     if(u32bool(pbrMaterial.occlusionTexture.hasTexture)) {
-        occlusion = textureSample(
+        let aosample = textureSample(
             occlusionTexture, 
             occlusionSampler, 
-            occlusionTexcoord) * pbrMaterial.occlusionStrength;
+            occlusionTexcoord).r;
+        occlusion = mix(1.0, aosample, pbrMaterial.occlusionStrength);;
     }
 
     let pbrcolor = getPbrColor(
         cbase,
+        occlusion,
         metallic,
         roughness,
         surfpos,
@@ -187,6 +196,12 @@ fn getPbrMaterialColor(
 
     finalColor = rgamma(finalColor);
 
+    if(u32bool(pbrMaterial.hasTransmission)) {
+        finalColor.a = (1.0 - pbrMaterial.transmissionFactor) * cbase.a;
+    } else {
+        finalColor.a = cbase.a;
+    }
+
     finalColor.a = cbase.a;
 
     return finalColor;
@@ -195,6 +210,7 @@ fn getPbrMaterialColor(
 
 fn getPbrColor(
     cbase: vec4f,
+    occlusion: f32,
     metallic: f32,
     roughness: f32,
     surfpos: vec3f,
@@ -207,17 +223,25 @@ fn getPbrColor(
     let vnormal = normalize(normal);
     let veye = normalize(eyepos - surfpos);
 
-    var scolor = vec4f(0,0,0,0);
+    var indirectColor = vec4f(0,0,0,0);
+
+    if(u32bool(scene.ibl.canIBL)) {
+        let iblcolor = computeIBLColor(cbase.rgb, vnormal, veye, metallic, roughness);
+        indirectColor += vec4f(iblcolor, 1.0);
+    }
+    indirectColor = indirectColor * occlusion;
+
+    var directColor = vec4f(0,0,0,0);
 
     for(var i=0u; i<nlights; i=i+1u) {
         let plight = lights[i].position;
         let clight = lights[i].color;
         let vlight = normalize(plight - surfpos);
         let vhalf = normalize(vlight + veye);
-        scolor += computePbrColorOneLight(cbase, clight, metallic, roughness, vnormal, veye, vlight, vhalf);
+        directColor += computePbrColorOneLight(cbase, clight, metallic, roughness, vnormal, veye, vlight, vhalf);
     }
 
-    return scolor;
+    return indirectColor + directColor;
 
 }
 
@@ -245,8 +269,8 @@ fn computePbrColorOneLight(
     let a2 = a * a;
 
     // Diffuse
-    let f0 = mix(vec4f(0.04, 0.04, 0.04, 1.0), cbase, metallic);
-    let cdiff = mix(cbase, vec4f(0.0), metallic);
+    let f0 = computeF0(cbase.rgb, metallic);
+    let cdiff = mix(cbase.rgb, vec3f(0.0), metallic);
     let fdiff = cdiff / PI;
 
     // Specular (Using Heitz Smith Geometry Shadowing Masking)
@@ -262,9 +286,13 @@ fn computePbrColorOneLight(
 
     // 最终颜色计算
     // 注意：clight 通常包含强度，n_dot_l 是 Lambertian 项
-    let color = (fdiff + fspec) * clight * n_dot_l;
+    let color = (fdiff + fspec) * clight.rgb * n_dot_l;
 
     return vec4f(color.rgb, cbase.a); // 保持原始 Alpha
+}
+
+fn computeF0(cbase: vec3f, metallic: f32) -> vec3f {
+    return mix(vec3f(0.04, 0.04, 0.04), cbase, metallic);
 }
 
 // 法线分布函数 (Trowbridge-Reitz GGX)
@@ -274,6 +302,94 @@ fn ndf(alpha2: f32, n_dot_h: f32) -> f32 {
 }
 
 // 菲涅尔方程 (Schlick's approximation)
-fn fresnel(f0: vec4f, v_dot_h: f32) -> vec4f {
-    return f0 + (vec4f(1.0) - f0) * pow(clamp(1.0 - v_dot_h, 0.0, 1.0), 5.0);
+fn fresnel(f0: vec3f, v_dot_h: f32) -> vec3f {
+    return f0 + (vec3f(1.0) - f0) * pow(clamp(1.0 - v_dot_h, 0.0, 1.0), 5.0);
+}
+
+// c BaseColor; n: 法向量, v: 视线方向; m Metallic; r Roughness
+fn computeIBLColor(c:vec3f, n: vec3f, v:vec3f, m: f32, r:f32) -> vec3f {
+    let diffuse = iblDiffuse(n,c,m);
+    let f0 = computeF0(c, m);
+    let specular = iblSpecular(f0,n,v,r);
+    var color = diffuse + specular;
+    color = tonemapACES(color);
+    return color;
+}
+
+// n 法向量; c BaseColor; m Metallic
+fn iblDiffuse(n: vec3f, c: vec3f, m: f32) -> vec3f {
+    let irradiance = shIrradiance(n);
+    let diffuse = irradiance * c * (1.0 - m);
+    return diffuse;
+}
+
+fn shIrradiance(n: vec3<f32>) -> vec3<f32> {
+
+    let sh = scene.ibl.sh;
+
+    // n 是物体表面的世界空间法线 (必须归一化)
+    let x = n.x;
+    let y = n.y;
+    let z = n.z;
+
+    // 按照球谐函数基底公式进行多项式累加
+    // 注意：cmgen 输出的顺序通常是：
+    // L00, L1-1, L10, L11, L2-2, L2-1, L20, L21, L22
+    
+    var irradiance = vec3<f32>(0.0);
+
+    // Band 0 (常量)
+    irradiance += sh[0].rgb;
+
+    // Band 1 (线性项 - 主要是光的方向性)
+    irradiance += sh[1].rgb * y;
+    irradiance += sh[2].rgb * z;
+    irradiance += sh[3].rgb * x;
+
+    // Band 2 (二次项 - 光的细节变化)
+    irradiance += sh[4].rgb * (x * y);
+    irradiance += sh[5].rgb * (y * z);
+    irradiance += sh[6].rgb * (3.0 * z * z - 1.0);
+    irradiance += sh[7].rgb * (x * z);
+    irradiance += sh[8].rgb * (x * x - y * y);
+
+    // 因为是 pre-scaled，且是 irradiance 模式，
+    // 这里不再需要乘以 PI 或其他系数，直接返回。
+    // 为了防止负数（SH 数学模拟可能产生的黑斑），做一个 max(0)
+    return max(irradiance, vec3<f32>(0.0));
+}
+
+/* n 法向量; v 视线方向 r 粗糙度 */
+fn iblSpecular(f0: vec3f, n: vec3f, v:vec3f, r: f32) -> vec3f {
+
+    let maxLod = f32(textureNumLevels(prefilterTexture) - 1u);
+    let lod = r * maxLod;
+    let R = reflect(-v, n);
+
+    // 2. 采样（只要 Sampler 开启了 mipmapFilter: "linear"）
+    let ld = textureSampleLevel(
+        prefilterTexture, 
+        prefilterSampler, 
+        R, 
+        lod
+    ).rgb;
+    let lut = iblLUT(n,v,r);
+    let scale = lut.r;
+    let bias = lut.g;
+    let brdf = (f0 * scale + bias);
+    let specular = ld * brdf;
+
+    return specular;
+}
+
+fn iblLUT(n: vec3f, v:vec3f, r: f32) -> vec2f {
+    let tx = saturate(dot(n,v));
+    let ty = 1.0 - r;
+    let uv = vec2f(tx, ty);
+    let lut = textureSample(
+        lutTexture,
+        lutSampler,
+        uv
+    );
+    return lut.rg;
 }
