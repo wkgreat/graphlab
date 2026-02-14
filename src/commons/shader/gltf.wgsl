@@ -112,29 +112,6 @@ fn getTexcoord(input:VSInput, idx: u32) -> vec2f {
 
 @fragment fn fs(input: VSOutput) -> @location(0) vec4f {
 
-    // let c = textureSample(
-    //     metallicRoughnessTexture, 
-    //     metallicRoughnessSampler, 
-    //     input.metallicRoughnessTexcoord);
-    // let color = vec4f(c.b,c.b,c.b,1);
-    
-    // var n = textureSample(
-    //     normalTexture, 
-    //     normalSampler, 
-    //     input.normalTexcoord);
-    // n.a = 1.0;
-    // let color = n;
-    
-    // let color = vec4f(input.normal,1.0);
-
-    // var color = textureSample(
-    //     baseColorTexture, 
-    //     baseColorSampler, 
-    //     input.baseColorTexcoord);
-
-    // let texcoord = input.texcoord1;
-    // let color = vec4f(texcoord,0,1);
-
     let color = getPbrMaterialColor(
         input.baseColorTexcoord,
         input.metallicRoughnessTexcoord,

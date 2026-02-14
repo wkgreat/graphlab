@@ -56,3 +56,15 @@ struct SceneUniform {
 @group(0) @binding(2) var prefilterSampler: sampler;
 @group(0) @binding(3) var lutTexture: texture_2d<f32>;
 @group(0) @binding(4) var lutSampler: sampler;
+
+fn pv(p: vec4f) -> vec4f {
+    var v = scene.projection.projmtx * scene.camera.viewmtx * p;
+    v = v / v.w;
+    return v;
+}
+
+fn spv(p: vec4f) -> vec4f {
+    var v = scene.viewport.viewportmtx * scene.projection.projmtx * scene.camera.viewmtx * p;
+    v = v / v.w;
+    return v;
+}

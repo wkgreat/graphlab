@@ -2,7 +2,7 @@ import { Box } from "@radix-ui/themes";
 import type { FC } from "react";
 import React, { useEffect } from "react";
 import GLTF, { type GLTFRef } from "../../commons/format/gltf/gltf";
-import { GLTFDemo } from "./demo";
+import { GLTFDemo, logger } from "./demo";
 import GLTFTreeView from "./GLTFTreeView";
 
 import { mat4 } from "gl-matrix";
@@ -15,6 +15,7 @@ import DiffuseTransmissionTeacupGLTFURL from '/data/mesh/gltf/DiffuseTransmissio
 import modern_evening_stree_url from '/data/ibl/modern_evening_stree/ibl.json?url';
 import ferndale_studio_04_url from '/data/ibl/ferndale_studio_04/ibl.json?url';
 import IBL from "../../commons/ibl";
+import LogMonitor from "../../components/LogMonotor";
 
 interface GLTFSource {
     name: string
@@ -78,20 +79,43 @@ interface DemoViewProps {}
 
 const DemoView: FC<DemoViewProps> = (props) => {
 
+    const defaultGLTFSource = GLTFResources.DamagedHelmet;
+
     const [showSidebar, setShowSidebar] = React.useState(true);
     const [ready, setReady] = React.useState(false);
+    const [log, setLog] = React.useState("");
     const [gltf, setGLTF] = React.useState(null);
     const demoRef = React.useRef<GLTFDemo>(null);
     const paneRef = React.useRef<Pane>(null);
     const paneDataRef = React.useRef<object>(null);
 
+    logger.setHandler((log: string) => {
+        setLog(log);
+    })
+
+    function onGLTFChange(k: string) {
+        const resource = GLTFResources[k];
+        const gltf = new GLTF({ uri: resource.uri, name: resource.name });
+        gltf.onReady(() => {
+            console.log(`demo ${demoRef.current.uuid} add gltf from onGLTFChange`);
+            setGLTF(gltf);
+            demoRef.current.clearAndDestroyGLTFModels();
+            demoRef.current.addGLTFModel({
+                gltf,
+                ...resource
+            });
+            console.log(demoRef.current.gltfs.length);
+        })
+    }
+
     useEffect(() => {
+
         if (demoRef.current == null) {
             demoRef.current = new GLTFDemo();
         }
         if (paneDataRef.current == null) {
             paneDataRef.current = {
-                gltf: GLTFResources.DamagedHelmet.name,
+                gltf: defaultGLTFSource.name,
                 ibl: IBLSources.modern_evening_stree.name
             }
         }
@@ -103,18 +127,7 @@ const DemoView: FC<DemoViewProps> = (props) => {
             paneRef.current.addBinding(paneDataRef.current, "gltf" as never, {
                 label: "glTF模型",
                 options: gltfOptions
-            }).on("change", (e) => {
-                const resource = GLTFResources[e.value];
-                const gltf = new GLTF({ uri: resource.uri, name: resource.name });
-                gltf.onReady(() => {
-                    setGLTF(gltf);
-                    demoRef.current.clearAndDestroyGLTFModels();
-                    demoRef.current.addGLTFModel({
-                        gltf,
-                        ...resource
-                    });
-                })
-            });
+            }).on("change", (e) => onGLTFChange(e.value));
 
             const iblOptions = Object.fromEntries(Object.entries(IBLSources).map(([k, v]) => [k, k]));
             paneRef.current.addBinding(paneDataRef.current, "ibl" as never, {
@@ -130,17 +143,28 @@ const DemoView: FC<DemoViewProps> = (props) => {
             })
         }
         demoRef.current.setPane(paneRef.current);
-        demoRef.current.onReady(() => {
-            const gltfSource = GLTFResources.DamagedHelmet;
+        demoRef.current.onReady((demo) => {
+            const gltfSource = defaultGLTFSource;
             const gltf = new GLTF({ uri: gltfSource.uri, name: gltfSource.name })
             gltf.onReady(() => {
-                demoRef.current.addGLTFModel({ gltf, ...gltfSource });
+                demo.addGLTFModel({ gltf, ...gltfSource });
                 setGLTF(gltf);
             });
             demoRef.current.draw();
         });
 
         return () => {
+
+            if (demoRef.current != null) {
+                demoRef.current.destroy();
+                demoRef.current = null;
+            }
+
+            if (paneRef.current == null) {
+                paneRef.current.dispose();
+                paneRef.current = null;
+            }
+
         }
 
     }, [])
@@ -167,7 +191,7 @@ const DemoView: FC<DemoViewProps> = (props) => {
                 }}
                 className={showSidebar ? 'siderbar-open' : 'siderbar-close'}
             >
-                <div style={{ height: '100%', width: '300px', flexShrink: 0 }}>
+                <div style={{ height: '70%', width: '300px', flexShrink: 0 }}>
                     <div style={{
                         height: "5%",
                         display: "flex",
@@ -175,6 +199,9 @@ const DemoView: FC<DemoViewProps> = (props) => {
                         alignItems: "center"
                     }}>glTF可视化</div>
                     <GLTFTreeView gltf={gltf} />
+                </div>
+                <div style={{ height: '30%', width: '300px' }}>
+                    <LogMonitor log={log}></LogMonitor>
                 </div>
             </aside >
             <Box id="demo-div" style={{

@@ -1,5 +1,5 @@
 import { read, type KTX2Container } from "ktx-parse";
-import type { CanvasGPUInfo, GPUInfo } from "./webgpuUtils";
+import type { CanvasGPUInfo, GPUInfo, WebGPUContext } from "./webgpuUtils";
 import { createCubeTextureFromKTX2 } from "./texture";
 import type Scene from "./scene";
 import { vec3 } from "gl-matrix";
@@ -21,9 +21,8 @@ export default class EnvironmentMap {
     ktx?: KTX2Container;
 
     webgpu: {
+        context?: WebGPUContext
         scene?: Scene;
-        gpuinfo?: GPUInfo;
-        canvasinfo?: CanvasGPUInfo;
         buffers?: Record<string, GPUBuffer>;
         uniforms?: Record<string, GPUBuffer>;
         sampler?: GPUSampler;
@@ -53,9 +52,8 @@ export default class EnvironmentMap {
         return envmap;
     }
 
-    initWebGPU(gpuinfo: GPUInfo, canvasInfo: CanvasGPUInfo, scene: Scene) {
-        this.webgpu.gpuinfo = gpuinfo;
-        this.webgpu.canvasinfo = canvasInfo;
+    initWebGPU(context: WebGPUContext, scene: Scene) {
+        this.webgpu.context = context;
         this.webgpu.scene = scene;
     }
 
@@ -65,7 +63,7 @@ export default class EnvironmentMap {
             if (this.ktx == null) {
                 return null;
             }
-            const device = this.webgpu.gpuinfo?.device;
+            const device = this.webgpu.context?.device;
             if (device == null) {
                 return null;
             }
@@ -122,7 +120,7 @@ export default class EnvironmentMap {
     }
 
     getVertexBuffer() {
-        const device = this.webgpu.gpuinfo?.device;
+        const device = this.webgpu.context?.device;
         if (device == null) {
             return null;
         }
@@ -151,7 +149,7 @@ export default class EnvironmentMap {
     }
 
     getSampler(): GPUSampler | null {
-        const device = this.webgpu.gpuinfo?.device;
+        const device = this.webgpu.context?.device;
         if (device == null) {
             return null;
         }
@@ -170,7 +168,7 @@ export default class EnvironmentMap {
     }
 
     getBindGroup(): GPUBindGroup | null {
-        const device = this.webgpu.gpuinfo?.device;
+        const device = this.webgpu.context?.device;
         if (device == null) {
             return;
         }
@@ -197,7 +195,7 @@ export default class EnvironmentMap {
 
     draw(pass: GPURenderPassEncoder): void {
 
-        const device = this.webgpu.gpuinfo?.device;
+        const device = this.webgpu.context?.device;
         if (device == null) {
             return;
         }
@@ -213,18 +211,18 @@ export default class EnvironmentMap {
 
     getPipeline(): GPURenderPipeline | null {
 
-        const deivce = this.webgpu.gpuinfo?.device;
-        if (deivce == null) {
+        const device = this.webgpu.context?.device;
+        if (device == null) {
             return null;
         }
-        const module = deivce.createShaderModule({
+        const module = device.createShaderModule({
             label: "envmap skybox",
             code: skyboxCode
         });
 
         this.webgpu.module = module;
 
-        const bindGroupLayout = deivce.createBindGroupLayout({
+        const bindGroupLayout = device.createBindGroupLayout({
             label: "envmap skybox",
             entries: [
                 {
@@ -246,13 +244,13 @@ export default class EnvironmentMap {
             ]
         });
 
-        const pipelineLayout = deivce.createPipelineLayout({
+        const pipelineLayout = device.createPipelineLayout({
             bindGroupLayouts: [
                 bindGroupLayout
             ]
         });
 
-        const pipeline = deivce.createRenderPipeline({
+        const pipeline = device.createRenderPipeline({
             label: "envmap skybox",
             layout: pipelineLayout,
             vertex: {
@@ -270,7 +268,7 @@ export default class EnvironmentMap {
             fragment: {
                 module,
                 targets: [
-                    { format: this.webgpu.canvasinfo.context.getConfiguration().format }
+                    { format: this.webgpu.context.canvas.context.getConfiguration().format }
                 ]
             },
             primitive: {

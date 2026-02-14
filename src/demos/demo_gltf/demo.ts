@@ -1,29 +1,29 @@
 import Camera, { CameraMouseControl } from '../../commons/camera';
 import { type GLTFRef } from '../../commons/format/gltf/gltf';
-import PointLight from '../../commons/light';
 import Axis from '../../commons/mesh/axis';
 import { Ground } from '../../commons/objects';
 import Projection from '../../commons/projection';
 import Scene from '../../commons/scene';
-import { createCanvasGPUInfo, createDepthTexture, createGPUInfo, createRenderPassDescriptor, type CanvasGPUInfo, type GPUInfo } from '../../commons/webgpuUtils';
+import { createDepthTexture, createRenderPassDescriptor, createWebGPUContext, type WebGPUContext } from '../../commons/webgpuUtils';
 import './styles.css';
 
 import { mat4 } from 'gl-matrix';
-import GLTF from '../../commons/format/gltf/gltf';
-import GLTFRender from '../../commons/format/gltf/gltfrender';
-import type { NumArr3 } from '../../commons/defines';
-import { random, randomSign } from '../../commons/utils';
 import { Pane } from 'tweakpane';
 import EnvironmentMap from '../../commons/envmap';
+import GLTF from '../../commons/format/gltf/gltf';
+import GLTFRender from '../../commons/format/gltf/gltfrender';
 
-import iblURL from '/data/ibl/modern_evening_stree/ibl.json?url';
 import IBL from '../../commons/ibl';
+import Logger from '../../commons/logger';
+import iblURL from '/data/ibl/modern_evening_stree/ibl.json?url';
+
+export const logger = new Logger();
 
 export class GLTFDemo {
 
-    gpuInfo: GPUInfo | null = null
+    uuid: string;
 
-    canvasInfo: CanvasGPUInfo | null = null
+    context?: WebGPUContext;
 
     colorTexture: GPUTexture | null = null;
 
@@ -42,6 +42,8 @@ export class GLTFDemo {
     firstpass: boolean = true;
 
     ready: boolean = false;
+
+    #stoped: boolean = false;
 
     resizeObserver: ResizeObserver | null = null;
 
@@ -63,36 +65,29 @@ export class GLTFDemo {
 
     constructor() {
 
-        createGPUInfo().then(gpuinfo => {
+        this.uuid = crypto.randomUUID();
 
-            if (gpuinfo === null) {
-                console.error("GPU INFO is NULL");
+        const canvas = document.getElementById("webgpu-canvas") as HTMLCanvasElement | null;
+
+        if (canvas == null) {
+            return;
+        }
+
+        createWebGPUContext(canvas).then(context => {
+
+            this.context = context;
+
+            if (this.context == null) {
                 return;
             }
-            this.gpuInfo = gpuinfo;
-            const canvasId = 'webgpu-canvas';
-            const canvasInfo = createCanvasGPUInfo({
-                canvasId: canvasId,
-                config: {
-                    device: gpuinfo.device,
-                    format: gpuinfo.gpu.getPreferredCanvasFormat()
-                }
-            });
-            if (canvasInfo === null) {
-                console.error("canvasInfo is NULL");
-                return;
-            }
-            this.canvasInfo = canvasInfo;
 
-            const width = this.canvasInfo.canvas.width;
+            const width = this.context.canvas.element.width;
 
-            const height = this.canvasInfo.canvas.height;
-
-            this.canvasInfo = canvasInfo;
+            const height = this.context.canvas.element.height;
 
             this.refreshDepthTexture();
 
-            const from = [2, 2, 4, 1];
+            const from = [-1, 1, -1, 1];
             const to = [0, 0, 0, 1];
             const up = [0, 1, 0, 0];
 
@@ -117,16 +112,16 @@ export class GLTFDemo {
             mat4.rotateZ(worldmtx, worldmtx, -Math.PI / 2);
             this.scene.setWorldMatrix(worldmtx);
 
-            this.scene.initWebGPU(this.gpuInfo, this.canvasInfo);
-            this.scene.refreshViewport(this.canvasInfo.canvas.width, this.canvasInfo.canvas.height);
+            this.scene.initWebGPU(this.context);
+            this.scene.refreshViewport(width, height);
 
             // IBL
             IBL.loadFromURI(iblURL).then(ibl => {
-                ibl.initWebGPU(this.gpuInfo, this.canvasInfo, this.scene);
+                ibl.initWebGPU(this.context, this.scene);
                 this.scene.setIBL(ibl);
             })
 
-            this.cameraMouseCtrl = new CameraMouseControl(this.camera, this.canvasInfo.canvas);
+            this.cameraMouseCtrl = new CameraMouseControl(this.camera, this.context.canvas.element);
             this.cameraMouseCtrl.enable();
 
             // EnvironmentMap.fromKtx("modern_evening_street", EnvironmentMapImageURI).then(envmap => {
@@ -135,38 +130,38 @@ export class GLTFDemo {
             // })
 
             //gltf
-            this.gltfRender = new GLTFRender(this.gpuInfo, this.canvasInfo, this.scene);
+            this.gltfRender = new GLTFRender(this.context, this.scene);
 
             //objects
-            this.ground = new Ground({
-                xsize: 10,
-                ysize: 10,
-                density: 2,
-                worldmtx
-            });
-            this.ground.initWebGPU(this.gpuInfo, this.canvasInfo);
+            // this.ground = new Ground({
+            //     xsize: 10,
+            //     ysize: 10,
+            //     density: 2,
+            //     worldmtx
+            // });
+            // this.ground.initWebGPU(this.gpuInfo, this.canvasInfo);
 
             this.axis = new Axis({
                 xlim: [0, 50],
                 ylim: [0, 50],
                 zlim: [0, 50],
             });
-            this.axis.initWebGPU(this.gpuInfo, this.canvasInfo, this.scene);
+            this.axis.initWebGPU(this.context, this.scene);
 
             this.resizeObserver = new ResizeObserver(entries => {
                 for (const entry of entries) {
                     const canvas = entry.target as HTMLCanvasElement;
                     const width = entry.contentBoxSize[0].inlineSize;
                     const height = entry.contentBoxSize[0].blockSize;
-                    canvas.width = Math.max(1, Math.min(width, this.gpuInfo.device.limits.maxTextureDimension2D));
-                    canvas.height = Math.max(1, Math.min(height, this.gpuInfo.device.limits.maxTextureDimension2D));
+                    canvas.width = Math.max(1, Math.min(width, this.context.device.limits.maxTextureDimension2D));
+                    canvas.height = Math.max(1, Math.min(height, this.context.device.limits.maxTextureDimension2D));
                     this.projection.aspect = canvas.width / canvas.height;
                     this.scene.refreshViewport(canvas.width, canvas.height);
                     this.refreshDepthTexture();
                 }
             });
 
-            this.resizeObserver.observe(canvasInfo.canvas);
+            this.resizeObserver.observe(this.context.canvas.element);
 
             this.ready = true;
 
@@ -191,7 +186,7 @@ export class GLTFDemo {
     }
 
     refreshDepthTexture() {
-        const newDepthTexture = createDepthTexture(this.gpuInfo, this.canvasInfo.canvas.width, this.canvasInfo.canvas.height, this.depthFormat);
+        const newDepthTexture = createDepthTexture(this.context, this.depthFormat);
         if (this.depthTexture) {
             this.depthTexture.destroy();
         }
@@ -210,7 +205,7 @@ export class GLTFDemo {
             descriptor = createRenderPassDescriptor({
                 label: "demo",
                 first: this.firstpass,
-                colorTexture: this.canvasInfo.context.getCurrentTexture().createView(),
+                colorTexture: this.context.canvas.context.getCurrentTexture().createView(),
                 depthTexture: this.depthTexture,
                 clearColor: [0, 0, 0, 1],
                 clearDepth: 1.0
@@ -235,11 +230,17 @@ export class GLTFDemo {
         this.gltfs.push(info);
     }
 
-    render() {
+    lastTime: number = 0;
+
+    render(currentTime) {
+
+        if (this.#stoped) {
+            return;
+        }
 
         if (this.ready) {
 
-            const encoder = this.gpuInfo.device.createCommandEncoder();
+            const encoder = this.context.device.createCommandEncoder();
             this.firstpass = true;
             const pass = encoder.beginRenderPass(this.getRenderPassDescriptor());
             this.firstpass = false;
@@ -270,7 +271,9 @@ export class GLTFDemo {
 
             const commandBuffer = encoder.finish();
 
-            this.gpuInfo.device.queue.submit([commandBuffer]);
+            this.context.device.queue.submit([commandBuffer]);
+
+            this.lastTime = currentTime;
         }
 
         requestAnimationFrame(this.render.bind(this));
@@ -280,6 +283,28 @@ export class GLTFDemo {
 
         requestAnimationFrame(this.render.bind(this));
 
+    }
+
+    stopDraw() {
+        this.#stoped = true;
+    }
+
+    destroy() {
+        if (this.depthTexture) {
+            this.depthTexture.destroy();
+        }
+        for (const gltf of this.gltfs) {
+            gltf.gltf.destroy();
+        }
+        if (this.ground) {
+            this.ground.destroy();
+        }
+        if (this.axis) {
+            this.axis.destroy();
+        }
+        if (this.scene) {
+            this.scene.destroy();
+        }
     }
 
 }

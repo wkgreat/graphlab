@@ -202,8 +202,6 @@ fn getPbrMaterialColor(
         finalColor.a = cbase.a;
     }
 
-    finalColor.a = cbase.a;
-
     return finalColor;
 
 }

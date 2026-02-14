@@ -2,7 +2,8 @@ import { read, type KTX2Container } from "ktx-parse";
 import EnvironmentMap from "./envmap";
 import type Scene from "./scene";
 import { createCubeTextureFromKTX2, createTexture2DFromKTX2 } from "./texture";
-import type { CanvasGPUInfo, GPUInfo } from "./webgpuUtils";
+import type { CanvasGPUInfo, GPUInfo, WebGPUContext } from "./webgpuUtils";
+import { logger } from "../demos/demo_gltf/demo";
 
 export default class IBL {
 
@@ -24,9 +25,8 @@ export default class IBL {
     } = {};
 
     webgpu: {
+        context?: WebGPUContext;
         scene?: Scene;
-        gpuinfo?: GPUInfo;
-        canvasinfo?: CanvasGPUInfo;
         prefilterTexture?: GPUTexture;
         prefilterSampler?: GPUSampler;
         lutTexture?: GPUTexture;
@@ -52,15 +52,19 @@ export default class IBL {
         if (envFile != null) {
             const envURI = `${url}/${envFile}`;
             ibl.environmentURI = envURI;
+            logger.info("IBL enviroment data loading...");
             ibl.environment = await EnvironmentMap.fromKtx(ibl.name, envURI);
+            logger.info("IBL enviroment data finish");
         }
 
         const prefilterFile = json["prefilter"];
         if (prefilterFile != null) {
             const prefilterURI = `${url}/${prefilterFile}`;
             ibl.prefilterURI = prefilterURI;
+            logger.info("IBL prefilter data loading...");
             const pfres = await fetch(prefilterURI);
             const pfbuf = await pfres.arrayBuffer();
+            logger.info("IBL prefilter data finish");
             const pfktx = read(new Uint8Array(pfbuf));
             ibl.prefilterKTX = pfktx;
         }
@@ -69,9 +73,11 @@ export default class IBL {
         if (lutFile != null) {
             const lutURI = `${url}/${lutFile}`;
             ibl.lutURI = lutURI;
+            logger.info("IBL lut data loading...");
             const lutres = await fetch(lutURI);
             const lutbuf = await lutres.arrayBuffer();
             const lutktx = read(new Uint8Array(lutbuf));
+            logger.info("IBL lut data finish");
             ibl.lutKTX = lutktx;
         }
 
@@ -97,17 +103,16 @@ export default class IBL {
             this.sh.parameters != null;
     }
 
-    initWebGPU(gpuinfo: GPUInfo, canvasinfo: CanvasGPUInfo, scene: Scene) {
-        this.webgpu.gpuinfo = gpuinfo;
-        this.webgpu.canvasinfo = canvasinfo;
+    initWebGPU(context: WebGPUContext, scene: Scene) {
+        this.webgpu.context = context;
         this.webgpu.scene = scene;
         if (this.environment != null) {
-            this.environment.initWebGPU(gpuinfo, canvasinfo, scene);
+            this.environment.initWebGPU(context, scene);
         }
     }
 
     getPrefilterTexture() {
-        const device = this.webgpu.gpuinfo?.device;
+        const device = this.webgpu.context?.device;
         if (device == null) {
             return null;
         }
@@ -118,7 +123,7 @@ export default class IBL {
     }
 
     getPerfilterSampler() {
-        const device = this.webgpu.gpuinfo?.device;
+        const device = this.webgpu.context?.device;
         if (device == null) {
             return null;
         }
@@ -137,7 +142,7 @@ export default class IBL {
     }
 
     getLUTTexture() {
-        const device = this.webgpu.gpuinfo?.device;
+        const device = this.webgpu.context?.device;
         if (device == null) {
             return null;
         }
@@ -147,7 +152,7 @@ export default class IBL {
         return this.webgpu.lutTexture;
     }
     getLUTSampler() {
-        const device = this.webgpu.gpuinfo?.device;
+        const device = this.webgpu.context?.device;
         if (device == null) {
             return null;
         }

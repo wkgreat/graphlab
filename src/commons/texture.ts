@@ -225,8 +225,6 @@ export function createTexture2DFromKTX2(device: GPUDevice, ktx: KTX2Container): 
 
     const { format, bpp } = VK_FORMAT_MAP[vkFormat];
 
-    console.log(format);
-
     const texture = device.createTexture({
         size: [pixelWidth, pixelHeight],
         format: format,

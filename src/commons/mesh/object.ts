@@ -1,10 +1,9 @@
 import type { BuffersAndAttributes, ShaderDataDefinitions } from "webgpu-utils";
 import type Scene from "../scene";
-import type { CanvasGPUInfo, GPUInfo } from "../webgpuUtils";
+import type { CanvasGPUInfo, GPUInfo, WebGPUContext } from "../webgpuUtils";
 
 export interface RenderObjectWebGPU {
-    gpuinfo?: GPUInfo
-    canvasinfo?: CanvasGPUInfo
+    context?: WebGPUContext
     scene?: Scene
     definition?: ShaderDataDefinitions
     module?: GPUShaderModule
@@ -40,8 +39,8 @@ export interface RenderObjectOptions {
 export default abstract class RenderObject {
 
     label: string;
-    protected webgpu: RenderObjectWebGPU = {};
-    protected renderOptions: RenderOptions = {};
+    webgpu: RenderObjectWebGPU = {};
+    renderOptions: RenderOptions = {};
 
     constructor(options: RenderObjectOptions = {}) {
         this.label = options.label ?? "RenderObject";
@@ -69,10 +68,8 @@ export default abstract class RenderObject {
 
     }
 
-    initWebGPU(gpuinfo: GPUInfo, canvasinfo: CanvasGPUInfo, scene: Scene, options?: RenderOptions) {
-
-        this.webgpu.gpuinfo = gpuinfo;
-        this.webgpu.canvasinfo = canvasinfo;
+    initWebGPU(context: WebGPUContext, scene: Scene, options?: RenderOptions) {
+        this.webgpu.context = context;
         this.webgpu.scene = scene;
 
         if (options) {

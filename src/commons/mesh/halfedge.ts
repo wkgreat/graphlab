@@ -256,7 +256,7 @@ export default class HalfEdgeInfo {
         mesh.setModelMatrix(mat4.create());
         mesh.wireframe = false;
 
-        mesh.initWebGPU(this.mesh.render.gpuinfo, this.mesh.render.canvasInfo, this.mesh.render.scene);
+        mesh.initWebGPU(this.mesh.webgpu.context, this.mesh.scene);
         return mesh;
     }
 
@@ -279,7 +279,7 @@ export default class HalfEdgeInfo {
         sphereMesh.setColor([255.0 / 255, 215.0 / 255, 0, 1]);
         sphereMesh.setModelMatrix(mat4.create());
         this.selectedVertexMeshes.push(sphereMesh);
-        sphereMesh.initWebGPU(this.mesh.render.gpuinfo, this.mesh.render.canvasInfo, this.mesh.render.scene);
+        sphereMesh.initWebGPU(this.mesh.webgpu.context, this.mesh.scene);
         return sphereMesh;
     }
 

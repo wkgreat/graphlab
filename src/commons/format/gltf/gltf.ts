@@ -91,6 +91,21 @@ export class GLTFMesh {
     ref: GLTFRef;
     json: TGLTF.IMesh;
     primitives: GLTFPrimitive[];
+
+    #enabled: boolean = true;
+
+    disable() {
+        this.#enabled = false;
+    }
+
+    enable() {
+        this.#enabled = true;
+    }
+
+    get enabled() {
+        return this.#enabled;
+    }
+
     constructor(gltf: GLTF, ref: GLTFRef, json: TGLTF.IMesh) {
         this.gltf = gltf;
         this.ref = ref;
@@ -624,6 +639,7 @@ export class GLTFMaterial {
             if (this.json.extensions != null && GLTFExtensions.KHR_materials_transmission in this.json.extensions) {
                 this.transmission = new GLTFKNRMaterialsTransmission(
                     json.extensions[GLTFExtensions.KHR_materials_transmission] as GLTFKNRMaterialsTransmissionProps);
+                this.alphaMode = 'BLEND'; // TODO transmission 先临时用blend实现
             }
 
         }
@@ -808,47 +824,6 @@ export class GLTFImage {
         this.ref = ref;
         this.json = json;
     }
-
-    // async loadImageData() {
-    //     if (this.status !== GLTFImageStatus.NONE) {
-    //         return;
-    //     }
-
-    //     this.status = GLTFImageStatus.LOADING;
-
-    //     let data: ImageDataInfo | null = null;
-    //     if (this.json.uri) {
-    //         let absUri: string = "";
-    //         if (this.json.uri.startsWith("data:")) {
-    //             absUri = this.json.uri;
-    //         } else {
-    //             absUri = `${this.gltf.url}/${this.json.uri}`;
-    //         }
-    //         const res = await fetch(absUri);
-    //         const blob = await res.blob();
-    //         const buffer = await blob.arrayBuffer();
-    //         data = resolveImageData(buffer);
-
-    //     } else if (this.json.bufferView) {
-
-    //         const bufferView = this.gltf.bufferViews[this.json.bufferView];
-    //         if (!bufferView) {
-    //             this.status = GLTFImageStatus.FAILED;
-    //             throw new Error("GLTFImage loadImage get bufferView Failed");
-    //         }
-    //         const viewoffset = bufferView.byteOffset;
-    //         const viewlength = bufferView.byteLength;
-    //         const bufdata = await bufferView.loadData();
-    //         const mimeType = this.json.mimeType;
-    //         const buf = new ArrayBuffer(viewlength);
-    //         new Uint8Array(buf).set(bufdata.slice(viewoffset, viewoffset + viewlength))
-    //         data = resolveImageData(buf);
-
-    //     }
-    //     this.data = data;
-    //     this.status = GLTFImageStatus.READY;
-    //     return this.data;
-    // }
 
     async loadImage() {
 
@@ -1126,6 +1101,7 @@ export default class GLTF {
     #url: string;
     #json: TGLTF.IGLTF;
     #version: string;
+
 
     #ready: boolean = false;
     #readyQueue: ((gltf?: GLTF) => void)[] = [];

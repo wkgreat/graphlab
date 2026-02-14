@@ -1,6 +1,6 @@
 import type { NumArr2, NumArr3, NumArr4 } from "../defines";
 import type Scene from "../scene";
-import type { CanvasGPUInfo, GPUInfo } from "../webgpuUtils";
+import type { CanvasGPUInfo, GPUInfo, WebGPUContext } from "../webgpuUtils";
 import SimpleLine from "./simpleline";
 
 export interface AxisOptions {
@@ -47,13 +47,17 @@ export default class Axis {
         });
     }
 
-    initWebGPU(gpuinfo: GPUInfo, canvasinfo: CanvasGPUInfo, scene: Scene) {
+    initWebGPU(context: WebGPUContext, scene: Scene) {
 
-        this.#line.initWebGPU(gpuinfo, canvasinfo, scene);
+        this.#line.initWebGPU(context, scene);
 
     }
 
     draw(pass: GPURenderPassEncoder) {
         this.#line.draw(pass);
+    }
+
+    destroy() {
+        this.#line.destroy();
     }
 }

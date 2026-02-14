@@ -4,7 +4,7 @@ import type Camera from "./camera";
 import type { NumArr3, NumArr4 } from "./defines";
 import type Projection from "./projection";
 import { createCheckerBoardTexture } from "./texture";
-import type { CanvasGPUInfo, GPUInfo } from "./webgpuUtils";
+import type { CanvasGPUInfo, GPUInfo, WebGPUContext } from "./webgpuUtils";
 
 interface RayCrossTriangleResult {
     cross: boolean,
@@ -315,8 +315,8 @@ export class Ground {
         device.queue.writeBuffer(this.groundUniform, 0, groundView.arrayBuffer);
     }
 
-    initWebGPU(gpuinfo: GPUInfo, canvasinfo: CanvasGPUInfo) {
-        const device = gpuinfo.device;
+    initWebGPU(context: WebGPUContext) {
+        const device = context.device;
 
         this.refreshVertexBuffer(device);
 
@@ -387,7 +387,7 @@ export class Ground {
             fragment: {
                 module: this.module,
                 targets: [
-                    { format: canvasinfo.context.getConfiguration()!.format }
+                    { format: context.canvas.context.getConfiguration()!.format }
                 ]
             },
             primitive: {
@@ -401,9 +401,9 @@ export class Ground {
         });
     }
 
-    draw(gpuinfo: GPUInfo, camera: Camera, projection: Projection, pass: GPURenderPassEncoder) {
+    draw(context: WebGPUContext, camera: Camera, projection: Projection, pass: GPURenderPassEncoder) {
 
-        const device = gpuinfo.device;
+        const device = context.device;
 
         this.refreshTexture(device);
 
@@ -434,6 +434,26 @@ export class Ground {
         pass.setIndexBuffer(this.indexBuffer, 'uint32');
         pass.drawIndexed(6);
 
+    }
+
+    destroy() {
+        if (this.vertexBuffer) {
+            for (const buffer of this.vertexBuffer.buffers) {
+                buffer.destroy();
+            }
+            if (this.vertexBuffer.indexBuffer) {
+                this.vertexBuffer.indexBuffer.destroy();
+            }
+            if (this.indexBuffer) {
+                this.indexBuffer.destroy();
+            }
+            if (this.groundUniform) {
+                this.groundUniform.destroy();
+            }
+            if (this.texture) {
+                this.texture.destroy();
+            }
+        }
     }
 
 }

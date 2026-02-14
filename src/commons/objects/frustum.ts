@@ -3,7 +3,7 @@ import type Camera from "../camera"
 import type { NumArr3 } from "../defines"
 import { NDCCubeZO } from "../objects"
 import type Projection from "../projection"
-import type { CanvasGPUInfo, GPUInfo } from "../webgpuUtils"
+import type { CanvasGPUInfo, GPUInfo, WebGPUContext } from "../webgpuUtils"
 import { createBuffersAndAttributesFromArrays, makeShaderDataDefinitions, makeStructuredView, type BuffersAndAttributes, type ShaderDataDefinitions } from "webgpu-utils"
 import { Colors } from "../color"
 
@@ -259,9 +259,9 @@ export class Frustum {
         device.queue.writeBuffer(this.sceneUniform, 0, sceneView.arrayBuffer);
     }
 
-    initWebGPU(gpuinfo: GPUInfo, canvasinfo: CanvasGPUInfo, camera: Camera, projection: Projection) {
+    initWebGPU(context: WebGPUContext, camera: Camera, projection: Projection) {
 
-        const device = gpuinfo.device;
+        const device = context.device;
 
         const code = /*WGSL*/`
 
@@ -341,7 +341,7 @@ export class Frustum {
                 module: this.module,
                 targets: [
                     {
-                        format: canvasinfo.context.getConfiguration()!.format,
+                        format: context.canvas.context.getConfiguration()!.format,
                         blend: {
                             color: {
                                 srcFactor: 'src-alpha',         // 当前片元颜色贡献 = 颜色 * alpha
@@ -372,9 +372,9 @@ export class Frustum {
 
     }
 
-    draw(gpuinfo: GPUInfo, camera: Camera, projection: Projection, pass: GPURenderPassEncoder) {
+    draw(context: WebGPUContext, camera: Camera, projection: Projection, pass: GPURenderPassEncoder) {
 
-        const device = gpuinfo.device;
+        const device = context.device;
 
         this.refreshVertexBuffer(device);
 

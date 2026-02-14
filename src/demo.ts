@@ -1,5 +1,6 @@
 export interface DemoInfo {
     name: string
+    hidden: boolean
     category: string
     url: string
     description: string
@@ -12,6 +13,7 @@ export function getAllDemos(): DemoInfo[] {
 
         const meta = modules[path] as object;
         const name = meta["name"];
+        const hidden = meta["hidden"] ?? false;
         const category = "";
         let url = "";
         if (meta["external"]) {
@@ -26,6 +28,7 @@ export function getAllDemos(): DemoInfo[] {
 
         return {
             name,
+            hidden,
             category,
             url: url,
             description

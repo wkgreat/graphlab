@@ -1,0 +1,7 @@
+{
+    "external": false,
+    "url": "",
+    "html": "index.html",
+    "name": "几何对象绘制",
+    "description": "使用WebGPU绘制几何对象"
+}

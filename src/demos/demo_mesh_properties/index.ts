@@ -3,7 +3,7 @@ import { Pane } from 'tweakpane';
 import Camera, { CameraMouseControl } from '../../commons/camera';
 import { Ground } from '../../commons/objects';
 import Projection from '../../commons/projection';
-import { createCanvasGPUInfo, createDepthTexture, createGPUInfo, createRenderPassDescriptor, type CanvasGPUInfo, type GPUInfo } from '../../commons/webgpuUtils';
+import { createCanvasGPUInfo, createDepthTexture, createGPUInfo, createRenderPassDescriptor, createWebGPUContext, type CanvasGPUInfo, type GPUInfo, type WebGPUContext } from '../../commons/webgpuUtils';
 import './styles.css';
 
 import bunnyURL from '/data/mesh/bun_zipper.ply?url';
@@ -16,15 +16,13 @@ import PointLight from '../../commons/light';
 import Axis from '../../commons/mesh/axis';
 import Mesh, { MeshSelectMode } from '../../commons/mesh/mesh';
 import { RenderSpace } from '../../commons/mesh/object';
-import PLYMeshData from '../../commons/mesh/plyformat';
 import type SimpleLine from '../../commons/mesh/simpleline';
 import Scene from '../../commons/scene';
+import PLYMeshData from '../../commons/format/ply/plyformat';
 
 class MeshDemo {
 
-    gpuInfo: GPUInfo | null = null
-
-    canvasInfo: CanvasGPUInfo | null = null
+    context?: WebGPUContext;
 
     colorTexture: GPUTexture | null = null;
 
@@ -71,31 +69,23 @@ class MeshDemo {
 
     constructor() {
 
-        createGPUInfo().then(gpuinfo => {
-            if (gpuinfo === null) {
-                console.error("GPU INFO is NULL");
+        const canvas = document.getElementById("webgpu-canvas") as HTMLCanvasElement | null;
+
+        if (canvas == null) {
+            return;
+        }
+
+        createWebGPUContext(canvas).then(context => {
+
+            this.context = context;
+
+            if (this.context == null) {
                 return;
             }
-            this.gpuInfo = gpuinfo;
-            const canvasId = 'webgpu-canvas';
-            const canvasInfo = createCanvasGPUInfo({
-                canvasId: canvasId,
-                config: {
-                    device: gpuinfo.device,
-                    format: gpuinfo.gpu.getPreferredCanvasFormat()
-                }
-            });
-            if (canvasInfo === null) {
-                console.error("canvasInfo is NULL");
-                return;
-            }
-            this.canvasInfo = canvasInfo;
 
-            const width = this.canvasInfo.canvas.width;
+            const width = this.context.canvas.element.width;
 
-            const height = this.canvasInfo.canvas.height;
-
-            this.canvasInfo = canvasInfo;
+            const height = this.context.canvas.element.height;
 
             this.refreshDepthTexture();
 
@@ -109,10 +99,10 @@ class MeshDemo {
 
             this.scene = new Scene(this.camera, this.projection);
             this.scene.addLight(new PointLight([500, -500, 500], [1, 1, 1, 0.5]));
-            this.scene.initWebGPU(this.gpuInfo, this.canvasInfo);
-            this.scene.refreshViewport(this.canvasInfo.canvas.width, this.canvasInfo.canvas.height);
+            this.scene.initWebGPU(this.context);
+            this.scene.refreshViewport(width, height);
 
-            this.cameraMouseCtrl = new CameraMouseControl(this.camera, this.canvasInfo.canvas);
+            this.cameraMouseCtrl = new CameraMouseControl(this.camera, this.context.canvas.element);
 
             this.cameraMouseCtrl.enable();
 
@@ -122,31 +112,31 @@ class MeshDemo {
                 ysize: 1000,
                 density: 1.0
             });
-            this.ground.initWebGPU(this.gpuInfo, this.canvasInfo);
+            this.ground.initWebGPU(this.context);
 
             this.axis = new Axis({
                 xlim: [0, 500],
                 ylim: [0, 500],
                 zlim: [0, 500],
             });
-            this.axis.initWebGPU(this.gpuInfo, this.canvasInfo, this.scene);
+            this.axis.initWebGPU(this.context, this.scene);
 
             this.resizeObserver = new ResizeObserver(entries => {
                 for (const entry of entries) {
                     const canvas = entry.target as HTMLCanvasElement;
                     const width = entry.contentBoxSize[0].inlineSize;
                     const height = entry.contentBoxSize[0].blockSize;
-                    canvas.width = Math.max(1, Math.min(width, this.gpuInfo.device.limits.maxTextureDimension2D));
-                    canvas.height = Math.max(1, Math.min(height, this.gpuInfo.device.limits.maxTextureDimension2D));
+                    canvas.width = Math.max(1, Math.min(width, this.context.device.limits.maxTextureDimension2D));
+                    canvas.height = Math.max(1, Math.min(height, this.context.device.limits.maxTextureDimension2D));
                     this.projection.aspect = canvas.width / canvas.height;
                     this.scene.refreshViewport(canvas.width, canvas.height);
                     this.refreshDepthTexture();
                 }
             });
 
-            this.resizeObserver.observe(canvasInfo.canvas);
+            this.resizeObserver.observe(this.context.canvas.element);
 
-            this.canvasInfo.canvas.addEventListener("click", (e) => {
+            this.context.canvas.element.addEventListener("click", (e) => {
 
                 const pixel = this.getPixelOfMouse(e);
                 const ray = this.scene.getRayOfPixel(pixel[0], pixel[1]);
@@ -175,7 +165,7 @@ class MeshDemo {
     }
 
     getPixelOfMouse(event: MouseEvent) {
-        const canvas = this.canvasInfo.canvas;
+        const canvas = this.context.canvas.element;
         const rect = canvas.getBoundingClientRect();
         const scaleX = canvas.width / rect.width;
         const scaleY = canvas.height / rect.height;
@@ -200,7 +190,7 @@ class MeshDemo {
                 ]);
                 mesh.selectMode = MeshSelectMode.VERTEX;
                 mesh.selectVertexNRing = this.paneParams.nring;
-                mesh.initWebGPU(this.gpuInfo, this.canvasInfo, this.scene, {
+                mesh.initWebGPU(this.context, this.scene, {
                     depth: {
                         depthBias: 1,
                         depthBiasSlopeScale: 1
@@ -249,7 +239,7 @@ class MeshDemo {
 
     addMesh(mesh: Mesh) {
 
-        mesh.initWebGPU(this.gpuInfo, this.canvasInfo, this.scene, {
+        mesh.initWebGPU(this.context, this.scene, {
             depth: {
                 depthBias: 0,
                 depthBiasSlopeScale: 0
@@ -261,7 +251,7 @@ class MeshDemo {
     }
 
     refreshDepthTexture() {
-        const newDepthTexture = createDepthTexture(this.gpuInfo, this.canvasInfo.canvas.width, this.canvasInfo.canvas.height, this.depthFormat);
+        const newDepthTexture = createDepthTexture(this.context, this.depthFormat);
         if (this.depthTexture) {
             this.depthTexture.destroy();
         }
@@ -280,7 +270,7 @@ class MeshDemo {
             descriptor = createRenderPassDescriptor({
                 label: "demo",
                 first: this.firstpass,
-                colorTexture: this.canvasInfo.context.getCurrentTexture().createView(),
+                colorTexture: this.context.canvas.context.getCurrentTexture().createView(),
                 depthTexture: this.depthTexture,
                 clearColor: [0, 0, 0, 1],
                 clearDepth: 1.0
@@ -293,13 +283,13 @@ class MeshDemo {
 
         if (this.ready) {
 
-            const encoder = this.gpuInfo.device.createCommandEncoder();
+            const encoder = this.context.device.createCommandEncoder();
             this.firstpass = true;
             const pass = encoder.beginRenderPass(this.getRenderPassDescriptor());
             this.firstpass = false;
 
             if (this.ground) {
-                this.ground.draw(this.gpuInfo, this.camera, this.projection, pass);
+                this.ground.draw(this.context, this.camera, this.projection, pass);
             }
 
             if (this.axis) {
@@ -336,7 +326,7 @@ class MeshDemo {
 
             const commandBuffer = encoder.finish();
 
-            this.gpuInfo.device.queue.submit([commandBuffer]);
+            this.context.device.queue.submit([commandBuffer]);
         }
 
         requestAnimationFrame(this.render.bind(this));
@@ -460,7 +450,7 @@ class MeshDemo {
                     if (mesh.halfedge) {
                         mesh.halfedge.computeNormals();
                         this.normalLine = mesh.createNormalLine(1);
-                        this.normalLine.initWebGPU(this.gpuInfo, this.canvasInfo, this.scene);
+                        this.normalLine.initWebGPU(this.context, this.scene);
                     }
                 }
             } else {

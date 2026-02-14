@@ -1,15 +1,16 @@
 import { mat4, vec3, vec4 } from 'gl-matrix';
 import { createBuffersAndAttributesFromArrays, makeShaderDataDefinitions, makeStructuredView } from 'webgpu-utils';
 import { Colors } from '../color';
-import type { NumArr4 } from '../defines';
+import type { NumArr3, NumArr4 } from '../defines';
 import { BlinnPhongMaterial } from '../material';
 import { normalMatrix, vec4t3 } from '../matrix';
 import type Scene from '../scene';
 import code from '../shader/mesh.wgsl';
-import type { CanvasGPUInfo, GPUInfo } from '../webgpuUtils';
+import type { WebGPUContext } from '../webgpuUtils';
 import HalfEdgeInfo from './halfedge';
 import RenderObject, { type RenderObjectOptions, type RenderOptions } from './object';
 import SimpleLine from './simpleline';
+import { AABB } from '../objects/box';
 
 export type MeshColorMode = 'vertex' | 'face' | 'mesh'
 
@@ -26,7 +27,7 @@ export interface MeshOptions extends RenderObjectOptions {};
 
 export default class Mesh extends RenderObject {
 
-    render: MeshRender | null = null;
+    scene?: Scene
 
     positions?: Float32Array
     normals?: Float32Array
@@ -53,6 +54,8 @@ export default class Mesh extends RenderObject {
 
     selectMode: number = MeshSelectMode.NONE;
     selectVertexNRing: number = 0;
+
+    aabb?: AABB;
 
     constructor(options: MeshOptions = {}) {
         options.label = options.label ?? "Mesh";
@@ -90,6 +93,25 @@ export default class Mesh extends RenderObject {
 
     get vertexCount(): number {
         return this.positions.length / 3;
+    }
+
+    getAABB(): AABB {
+
+        if (this.aabb == null) {
+            const aabb = new AABB(
+                [Infinity, Infinity, Infinity],
+                [-Infinity, -Infinity, -Infinity]
+            );
+
+            for (let i = 0; i < this.vertexCount; ++i) {
+                aabb.addPoint(this.positions.slice(i * 3, i * 3 + 3));
+            }
+
+            this.aabb = aabb;
+        }
+
+        return this.aabb;
+
     }
 
     transform(mtx: mat4) {
@@ -181,12 +203,13 @@ export default class Mesh extends RenderObject {
         this.halfedge = new HalfEdgeInfo(this);
     }
 
-    override initWebGPU(gpuinfo: GPUInfo, canvasinfo: CanvasGPUInfo, scene: Scene, options?: RenderOptions) {
-        this.webgpu.gpuinfo = gpuinfo;
-        this.webgpu.canvasinfo = canvasinfo;
-        this.webgpu.definition = makeShaderDataDefinitions(code);
+    override initWebGPU(context: WebGPUContext, scene: Scene, options?: RenderOptions) {
 
-        this.render = new MeshRender(gpuinfo, canvasinfo, scene);
+        this.webgpu.context = context;
+
+        this.scene = scene;
+
+        this.webgpu.definition = makeShaderDataDefinitions(code);
 
         this.refreshRenderOptions(options);
 
@@ -221,11 +244,11 @@ export default class Mesh extends RenderObject {
     }
 
     refreshDefaultVertexBuffer(force: boolean = false) {
-        if (!this.webgpu.gpuinfo) {
+        if (!this.webgpu.context) {
             return;
         }
 
-        const device = this.webgpu.gpuinfo.device;
+        const device = this.webgpu.context.device;
 
         if (force || !("default" in this.webgpu.buffers)) {
             if (!this.colors) {
@@ -262,11 +285,11 @@ export default class Mesh extends RenderObject {
     }
 
     refreshWireframeVertexBuffer(force: boolean = false) {
-        if (!this.webgpu.gpuinfo) {
+        if (!this.webgpu.context) {
             return;
         }
 
-        const device = this.webgpu.gpuinfo.device;
+        const device = this.webgpu.context.device;
 
         if (force || !("wireframe" in this.webgpu.buffers)) {
 
@@ -313,9 +336,9 @@ export default class Mesh extends RenderObject {
 
     refreshUniforms() {
 
-        const device = this.webgpu.gpuinfo.device;
+        const device = this.webgpu.context.device;
 
-        this.render.scene.refreshUniform();
+        this.scene.refreshUniform();
 
         //material
         const materialView = makeStructuredView(this.webgpu.definition.uniforms.material);
@@ -366,7 +389,7 @@ export default class Mesh extends RenderObject {
 
     createPipeline() {
 
-        const device = this.webgpu.gpuinfo.device;
+        const device = this.webgpu.context.device;
 
         this.webgpu.module = device.createShaderModule({
             label: this.label,
@@ -391,7 +414,7 @@ export default class Mesh extends RenderObject {
 
         const layout = device.createPipelineLayout({
             bindGroupLayouts: [
-                this.render.scene.bindGroupLayout,
+                this.scene.bindGroupLayout,
                 bindGroupLayout
             ]
         });
@@ -407,7 +430,7 @@ export default class Mesh extends RenderObject {
                 module: this.webgpu.module,
                 targets: [
                     {
-                        format: this.webgpu.canvasinfo.context.getConfiguration().format,
+                        format: this.webgpu.context.canvas.context.getConfiguration().format,
                         blend: {
                             color: {
                                 operation: 'add',
@@ -450,7 +473,8 @@ export default class Mesh extends RenderObject {
 
     draw(pass: GPURenderPassEncoder) {
 
-        const device = this.render.gpuinfo.device;
+        const device = this.webgpu.context.device;
+
         this.refreshUniforms();
 
         const bindGroup = device.createBindGroup({
@@ -464,7 +488,7 @@ export default class Mesh extends RenderObject {
         if (this.wireframe) {
             const bufferInfo = this.webgpu.buffers.wireframe;
             pass.setPipeline(this.webgpu.pipelines["wireframe"]);
-            pass.setBindGroup(0, this.render.scene.bindGroup);
+            pass.setBindGroup(0, this.scene.bindGroup);
             pass.setBindGroup(1, bindGroup);
             pass.setVertexBuffer(0, bufferInfo.buffers[0]);
             if (this.vertexIndices) {
@@ -477,7 +501,7 @@ export default class Mesh extends RenderObject {
         } else {
             const bufferInfo = this.webgpu.buffers.default;
             pass.setPipeline(this.webgpu.pipelines["default"]);
-            pass.setBindGroup(0, this.render.scene.bindGroup);
+            pass.setBindGroup(0, this.scene.bindGroup);
             pass.setBindGroup(1, bindGroup);
             pass.setVertexBuffer(0, bufferInfo.buffers[0]);
             if (this.vertexIndices) {
@@ -547,16 +571,4 @@ export default class Mesh extends RenderObject {
 
     }
 
-}
-
-class MeshRender {
-    gpuinfo: GPUInfo
-    canvasInfo: CanvasGPUInfo
-    scene: Scene
-
-    constructor(gpuinfo: GPUInfo, canvasinfo: CanvasGPUInfo, scene: Scene) {
-        this.gpuinfo = gpuinfo;
-        this.canvasInfo = canvasinfo;
-        this.scene = scene;
-    }
 }

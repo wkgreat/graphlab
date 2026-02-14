@@ -3,7 +3,7 @@ import type Camera from "./camera";
 import type Projection from "./projection";
 import { Ray } from "./objects";
 import type PointLight from "./light";
-import { bool2num, type CanvasGPUInfo, type GPUInfo } from "./webgpuUtils";
+import { bool2num, type CanvasGPUInfo, type GPUInfo, type WebGPUContext } from "./webgpuUtils";
 import sceneCode from "./shader/scene.wgsl";
 import { makeShaderDataDefinitions, makeStructuredView, type ShaderDataDefinitions } from "webgpu-utils";
 import { vec4t3 } from "./matrix";
@@ -22,9 +22,8 @@ export default class Scene {
     ibl?: IBL;
 
     #webgpu: {
-        gpuinfo?: GPUInfo,
-        canvasinfo?: CanvasGPUInfo,
-        definition?: ShaderDataDefinitions,
+        context?: WebGPUContext
+        definition?: ShaderDataDefinitions
         uniform?: GPUBuffer,
         layout?: GPUBindGroupLayout
         bindgroup?: GPUBindGroup
@@ -49,8 +48,8 @@ export default class Scene {
 
     setIBL(ibl: IBL) {
         this.ibl = ibl;
-        if (this.#webgpu.gpuinfo != null && ibl.webgpu.gpuinfo == null) {
-            ibl.initWebGPU(this.#webgpu.gpuinfo, this.#webgpu.canvasinfo, this);
+        if (this.#webgpu.context != null && ibl.webgpu.context == null) {
+            ibl.initWebGPU(this.#webgpu.context, this);
         }
     }
 
@@ -113,15 +112,14 @@ export default class Scene {
         return ray;
     }
 
-    initWebGPU(gpuinfo: GPUInfo, canvasinfo: CanvasGPUInfo) {
-        this.#webgpu.gpuinfo = gpuinfo;
-        this.#webgpu.canvasinfo = canvasinfo;
+    initWebGPU(context: WebGPUContext) {
+        this.#webgpu.context = context;
     }
 
     refreshUniform() {
 
-        if (this.#webgpu.gpuinfo) {
-            const device = this.#webgpu.gpuinfo.device;
+        if (this.#webgpu.context) {
+            const device = this.#webgpu.context.device;
 
             if (!this.#webgpu.definition) {
                 this.#webgpu.definition = makeShaderDataDefinitions(sceneCode);
@@ -196,8 +194,8 @@ export default class Scene {
 
     get bindGroupLayout() {
 
-        if (this.#webgpu.gpuinfo) {
-            const device = this.#webgpu.gpuinfo.device;
+        if (this.#webgpu.context) {
+            const device = this.#webgpu.context.device;
 
             if (!this.#webgpu.layout) {
                 this.#webgpu.layout = device.createBindGroupLayout({
@@ -256,7 +254,7 @@ export default class Scene {
             texture = this.ibl.getPrefilterTexture();
         }
         if (texture == null) {
-            const device = this.#webgpu.gpuinfo?.device;
+            const device = this.#webgpu.context?.device;
             texture = this.getDefaultCubeTexture(device);
         }
         return texture;
@@ -268,7 +266,7 @@ export default class Scene {
             sampler = this.ibl.getPerfilterSampler();
         }
         if (sampler == null) {
-            const device = this.#webgpu.gpuinfo?.device;
+            const device = this.#webgpu.context?.device;
             sampler = this.getDefaultCubeSampler(device);
         }
         return sampler;
@@ -280,7 +278,7 @@ export default class Scene {
             texture = this.ibl.getLUTTexture();
         }
         if (texture == null) {
-            const device = this.#webgpu.gpuinfo?.device;
+            const device = this.#webgpu.context?.device;
             texture = this.getDefault2DTexture(device);
         }
         return texture;
@@ -292,7 +290,7 @@ export default class Scene {
             sampler = this.ibl.getLUTSampler();
         }
         if (sampler == null) {
-            const device = this.#webgpu.gpuinfo?.device;
+            const device = this.#webgpu.context?.device;
             sampler = this.getDefault2DSampler(device);
         }
         return sampler;
@@ -308,8 +306,8 @@ export default class Scene {
     }
 
     get bindGroup() {
-        if (this.#webgpu.gpuinfo) {
-            const device = this.#webgpu.gpuinfo.device;
+        if (this.#webgpu.context) {
+            const device = this.#webgpu.context.device;
             const prefilterTexture = this.getPrefilterTexture();
             const prefilterSampler = this.getPrefilterSampler();
             const lutTexture = this.getLUTTexture();

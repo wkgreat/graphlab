@@ -20,6 +20,7 @@
     "ktx-parse": "^1.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-lazylog": "^4.5.3",
     "tweakpane": "^4.0.5",
     "upng-js": "^2.1.0",
     "webgpu-utils": "^2.0.2"

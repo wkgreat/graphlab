@@ -1,6 +1,6 @@
 import { Ground } from '../../commons/objects';
 import Projection from '../../commons/projection';
-import { createCanvasGPUInfo, createDepthTexture, createGPUInfo, createRenderPassDescriptor, type CanvasGPUInfo, type GPUInfo } from '../../commons/webgpuUtils';
+import { createCanvasGPUInfo, createDepthTexture, createGPUInfo, createRenderPassDescriptor, createWebGPUContext, type CanvasGPUInfo, type GPUInfo, type WebGPUContext } from '../../commons/webgpuUtils';
 import Camera, { CameraMouseControl } from '../../commons/camera';
 import './styles.css';
 import { Pane } from 'tweakpane';
@@ -11,9 +11,7 @@ import { Frustum } from '../../commons/objects/frustum';
 
 class FrustumDemo {
 
-    gpuInfo: GPUInfo | null = null
-
-    canvasInfo: CanvasGPUInfo | null = null
+    context?: WebGPUContext;
 
     colorTexture: GPUTexture | null = null;
 
@@ -57,31 +55,23 @@ class FrustumDemo {
 
     constructor() {
 
-        createGPUInfo().then(gpuinfo => {
-            if (gpuinfo === null) {
-                console.error("GPU INFO is NULL");
-                return;
+        const canvas = document.getElementById("webgpu-canvas") as HTMLCanvasElement | null;
+
+        if (canvas == null) {
+            return;
+        }
+
+        createWebGPUContext(canvas).then(context => {
+
+            this.context = context;
+
+            if (context == null) {
+                return null;
             }
-            this.gpuInfo = gpuinfo;
-            const canvasId = 'webgpu-canvas';
-            const canvasInfo = createCanvasGPUInfo({
-                canvasId: canvasId,
-                config: {
-                    device: gpuinfo.device,
-                    format: gpuinfo.gpu.getPreferredCanvasFormat()
-                }
-            });
-            if (canvasInfo === null) {
-                console.error("canvasInfo is NULL");
-                return;
-            }
-            this.canvasInfo = canvasInfo;
 
-            const width = this.canvasInfo.canvas.width;
+            const width = this.context.canvas.element.width;
 
-            const height = this.canvasInfo.canvas.height;
-
-            this.canvasInfo = canvasInfo;
+            const height = this.context.canvas.element.height;
 
             this.refreshDepthTexture();
 
@@ -89,12 +79,12 @@ class FrustumDemo {
 
             this.projection = new Projection(Math.PI / 2, width / height, 1, 10000);
 
-            this.cameraMouseCtrl = new CameraMouseControl(this.camera, this.canvasInfo.canvas);
+            this.cameraMouseCtrl = new CameraMouseControl(this.camera, this.context.canvas.element);
 
             this.cameraMouseCtrl.enable();
 
             //objects
-            this.ground.initWebGPU(this.gpuInfo, this.canvasInfo);
+            this.ground.initWebGPU(this.context);
 
             this.frustum = new Frustum({
                 eye: Object.values(this.paneParams.frustum.eye) as NumArr3,
@@ -106,11 +96,10 @@ class FrustumDemo {
                 fovy: this.paneParams.frustum.fovy
             });
 
-            this.frustum.initWebGPU(this.gpuInfo, this.canvasInfo, this.camera, this.projection);
+            this.frustum.initWebGPU(this.context, this.camera, this.projection);
 
             this.simpleLineProgram = new SimpleLineProgram({
-                gpuinfo: this.gpuInfo,
-                canvasinfo: this.canvasInfo,
+                context: this.context,
                 mode: 'line-list'
             });
 
@@ -134,14 +123,14 @@ class FrustumDemo {
                     const canvas = entry.target as HTMLCanvasElement;
                     const width = entry.contentBoxSize[0].inlineSize;
                     const height = entry.contentBoxSize[0].blockSize;
-                    canvas.width = Math.max(1, Math.min(width, this.gpuInfo.device.limits.maxTextureDimension2D));
-                    canvas.height = Math.max(1, Math.min(height, this.gpuInfo.device.limits.maxTextureDimension2D));
+                    canvas.width = Math.max(1, Math.min(width, this.context.device.limits.maxTextureDimension2D));
+                    canvas.height = Math.max(1, Math.min(height, this.context.device.limits.maxTextureDimension2D));
                     this.projection.aspect = canvas.width / canvas.height;
                     this.refreshDepthTexture();
                 }
             });
 
-            this.resizeObserver.observe(canvasInfo.canvas);
+            this.resizeObserver.observe(this.context.canvas.element);
 
             this.pane = new Pane({
                 title: '参数控制',
@@ -158,7 +147,7 @@ class FrustumDemo {
     }
 
     refreshDepthTexture() {
-        const newDepthTexture = createDepthTexture(this.gpuInfo, this.canvasInfo.canvas.width, this.canvasInfo.canvas.height);
+        const newDepthTexture = createDepthTexture(this.context);
         if (this.depthTexture) {
             this.depthTexture.destroy();
         }
@@ -177,7 +166,7 @@ class FrustumDemo {
             descriptor = createRenderPassDescriptor({
                 label: "demo",
                 first: this.firstpass,
-                colorTexture: this.canvasInfo.context.getCurrentTexture().createView(),
+                colorTexture: this.context.canvas.context.getCurrentTexture().createView(),
                 depthTexture: this.depthTexture,
                 clearColor: [0, 0, 0, 1],
                 clearDepth: 1.0
@@ -190,19 +179,19 @@ class FrustumDemo {
 
         if (this.ready) {
 
-            const encoder = this.gpuInfo.device.createCommandEncoder();
+            const encoder = this.context.device.createCommandEncoder();
             this.firstpass = true;
             const pass = encoder.beginRenderPass(this.getRenderPassDescriptor());
             this.firstpass = false;
 
-            this.ground.draw(this.gpuInfo, this.camera, this.projection, pass);
-            this.frustum.draw(this.gpuInfo, this.camera, this.projection, pass);
+            this.ground.draw(this.context, this.camera, this.projection, pass);
+            this.frustum.draw(this.context, this.camera, this.projection, pass);
             this.simpleLineProgram.draw(this.camera, this.projection, pass);
             pass.end();
 
             const commandBuffer = encoder.finish();
 
-            this.gpuInfo.device.queue.submit([commandBuffer]);
+            this.context.device.queue.submit([commandBuffer]);
         }
 
         requestAnimationFrame(this.render.bind(this));

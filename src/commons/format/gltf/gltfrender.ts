@@ -4,7 +4,7 @@ import { normalMatrix } from "../../matrix";
 import type Scene from "../../scene";
 import code from '../../shader/gltf.wgsl';
 import { assertNotNull } from "../../utils";
-import { bool2num, type CanvasGPUInfo, type GPUInfo } from "../../webgpuUtils";
+import { bool2num, type CanvasGPUInfo, type GPUInfo, type WebGPUContext } from "../../webgpuUtils";
 import type GLTF from "./gltf";
 import { GLTFAccessor, GLTFAccessorCompType, GLTFAttributres, GLTFMaterial, GLTFMaterialTextures, type GLTFMesh, type GLTFNode, type GLTFPrimitive, type GLTFScene, type TGLTF } from "./gltf";
 import { showWGSL } from "../../debug";
@@ -33,15 +33,14 @@ export interface GLTFPipelineOptions {
     occlusionTexture: boolean;
     alphaMode: TGLTF.MaterialAlphaMode;
     doubleSided: boolean;
+    transmission: boolean;
 
 }
 
 class GLTFPipeline {
 
     options: GLTFPipelineOptions
-
-    gpuinfo: GPUInfo;
-    canvasinfo: CanvasGPUInfo;
+    context?: WebGPUContext;
     scene: Scene;
     definition?: ShaderDataDefinitions;
     pipeline?: GPURenderPipeline;
@@ -117,6 +116,7 @@ class GLTFPipeline {
             occlusionTexture: material.hasTexture(GLTFMaterialTextures.Occlusion),
             alphaMode: material.getAlphaMode(),
             doubleSided: material.getDoubleSided(),
+            transmission: material.transmission != null
         }
 
         return options;
@@ -147,7 +147,7 @@ class GLTFPipeline {
 
 
     getBlend(): GPUBlendState {
-        if (this.options.alphaMode === 'BLEND') {
+        if (this.options.alphaMode === 'BLEND' || this.options.transmission) {
             return {
                 color: {
                     srcFactor: 'src-alpha',       // SrcAlpha
@@ -179,14 +179,15 @@ class GLTFPipeline {
         }
     }
 
-    createPipeline(gpuinfo: GPUInfo, canvasinfo: CanvasGPUInfo, scene: Scene) {
-        this.gpuinfo = gpuinfo
-        this.canvasinfo = canvasinfo
+    createPipeline(context: WebGPUContext, scene: Scene) {
+
+        this.context = context;
+
         this.scene = scene;
 
         const label = "gltf";
 
-        const device = gpuinfo.device;
+        const device = this.context.device;
 
         this.definition = makeShaderDataDefinitions(code);
 
@@ -275,7 +276,7 @@ class GLTFPipeline {
                 module,
                 targets: [
                     {
-                        format: canvasinfo.context.getConfiguration().format,
+                        format: this.context.canvas.context.getConfiguration().format,
                         blend: this.getBlend()
                     }
                 ],
@@ -331,20 +332,23 @@ export interface GLTRRenderParams {
     matrix?: mat4
 };
 
+interface GLTFPrimitiveRenderInfo {
+    primitive: GLTFPrimitive;
+    matrix: mat4;
+}
+
 export default class GLTFRender {
 
     static pipelines: { [key: string]: GLTFPipeline } = {};
 
     webgpu: {
-        gpuinfo: GPUInfo;
-        canvasinfo: CanvasGPUInfo;
+        context?: WebGPUContext
         scene: Scene;
     };
 
-    constructor(gpuinfo: GPUInfo, canvasinfo: CanvasGPUInfo, scene: Scene) {
+    constructor(context: WebGPUContext, scene: Scene) {
         this.webgpu = {
-            gpuinfo,
-            canvasinfo,
+            context,
             scene
         };
     }
@@ -352,22 +356,41 @@ export default class GLTFRender {
     render(params: GLTRRenderParams) {
         const sref = params.sceneRef ?? params.gltf.json.scene;
         const scene = params.gltf.scenes[sref];
-        this.renderScene(scene, params);
+        const primitives: GLTFPrimitiveRenderInfo[] = [];
+        this.preRenderScene(scene, params, primitives);
+
+        const blendPrimitvies: GLTFPrimitiveRenderInfo[] = [];
+        const opaquePrimitvies: GLTFPrimitiveRenderInfo[] = [];
+        for (const info of primitives) {
+            if (info.primitive.getMeterial().getAlphaMode() === 'BLEND') {
+                blendPrimitvies.push(info);
+            } else {
+                opaquePrimitvies.push(info);
+            }
+        }
+
+        opaquePrimitvies.forEach(p => {
+            this.renderPrimitive(p.matrix, p.primitive, params);
+        })
+
+        blendPrimitvies.forEach(p => {
+            this.renderPrimitive(p.matrix, p.primitive, params);
+        })
+
+        //TODO 按 pipeline分组，使用相同pipeline同时绘制
     }
 
-    renderScene(scene: GLTFScene, params: GLTRRenderParams) {
+    preRenderScene(scene: GLTFScene, params: GLTRRenderParams, primitives: GLTFPrimitiveRenderInfo[]) {
         for (const ref of scene.nodes) {
             const node = params.gltf.nodes[ref];
-            this.renderNode(node, params.matrix ?? mat4.create(), params);
+            this.preRenderNode(node, params.matrix ?? mat4.create(), params, primitives);
         }
     }
 
-    renderNode(node: GLTFNode, mtx: mat4, params: GLTRRenderParams) {
+    preRenderNode(node: GLTFNode, mtx: mat4, params: GLTRRenderParams, primitives: GLTFPrimitiveRenderInfo[]) {
 
         if (!node.enabled) {
             return;
-        } else {
-            // console.log(node.ref);
         }
 
         const curMtx = mat4.multiply(mat4.create(), mtx, node.matrix);
@@ -375,7 +398,7 @@ export default class GLTFRender {
         if (node.children != null) {
             for (const ref of node.children) {
                 const child = params.gltf.nodes[ref];
-                this.renderNode(child, curMtx, params);
+                this.preRenderNode(child, curMtx, params, primitives);
             }
         }
 
@@ -389,18 +412,21 @@ export default class GLTFRender {
 
         if (node.mesh != null) {
             const mesh = params.gltf.meshes[node.mesh];
-            this.renderMesh(node, mesh, curMtx, params);
+            this.preRenderMesh(mesh, curMtx, params, primitives);
         }
 
     }
 
-    renderMesh(node: GLTFNode, mesh: GLTFMesh, mtx: mat4, params: GLTRRenderParams) {
-        for (const p of mesh.primitives) {
-            this.renderPrimitive(mesh, mtx, p, params);
+    preRenderMesh(mesh: GLTFMesh, matrix: mat4, params: GLTRRenderParams, primitives: GLTFPrimitiveRenderInfo[]) {
+        if (!mesh.enabled) {
+            return;
+        }
+        for (const primitive of mesh.primitives) {
+            primitives.push({ primitive, matrix });
         }
     }
 
-    renderPrimitive(mesh: GLTFMesh, mtx: mat4, primitive: GLTFPrimitive, params: GLTRRenderParams) {
+    renderPrimitive(mtx: mat4, primitive: GLTFPrimitive, params: GLTRRenderParams) {
 
         const opts = GLTFPipeline.getPipelineOptionsOfPrimitive(params.gltf, primitive);
         const key = GLTFPipeline.getPipelineKeyOfOptions(opts);
@@ -410,15 +436,15 @@ export default class GLTFRender {
         if (key in GLTFRender.pipelines) {
             gltfPipeline = GLTFRender.pipelines[key];
             if (gltfPipeline.pipeline == null) {
-                gltfPipeline.createPipeline(this.webgpu.gpuinfo, this.webgpu.canvasinfo, this.webgpu.scene);
+                gltfPipeline.createPipeline(this.webgpu.context, this.webgpu.scene);
             }
         } else {
             gltfPipeline = new GLTFPipeline(opts);
-            gltfPipeline.createPipeline(this.webgpu.gpuinfo, this.webgpu.canvasinfo, this.webgpu.scene);
+            gltfPipeline.createPipeline(this.webgpu.context, this.webgpu.scene);
             GLTFRender.pipelines[key] = gltfPipeline;
         }
 
-        const device = this.webgpu.gpuinfo.device;
+        const device = this.webgpu.context.device;
 
         //uniform
         const modelView = makeStructuredView(gltfPipeline.definition.uniforms.model);

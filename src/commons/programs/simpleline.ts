@@ -1,12 +1,11 @@
 import { createBuffersAndAttributesFromArrays, makeShaderDataDefinitions, makeStructuredView, type ShaderDataDefinitions } from 'webgpu-utils';
-import type { CanvasGPUInfo, GPUInfo } from '../webgpuUtils';
+import type { CanvasGPUInfo, GPUInfo, WebGPUContext } from '../webgpuUtils';
 import code from './simpleline.wgsl?raw'
 import type Camera from '../camera';
 import type Projection from '../projection';
 
 export interface SimpleLineProgramOptions {
-    gpuinfo: GPUInfo,
-    canvasinfo: CanvasGPUInfo,
+    context: WebGPUContext
     mode: 'line-list' | 'line-strip'
 }
 
@@ -18,8 +17,7 @@ export interface SimpleLineProgramData {
 export default class SimpleLineProgram {
 
     label = "SimpleLineProgram";
-    gpuinfo: GPUInfo;
-    canvasinfo: CanvasGPUInfo;
+    context: WebGPUContext;
     mode: 'line-list' | 'line-strip'
     definition: ShaderDataDefinitions;
     module: GPUShaderModule | null = null;
@@ -30,8 +28,7 @@ export default class SimpleLineProgram {
     vertexCount: number = 0;
 
     constructor(options: SimpleLineProgramOptions) {
-        this.gpuinfo = options.gpuinfo
-        this.canvasinfo = options.canvasinfo;
+        this.context = options.context;
         this.mode = options.mode;
         this.definition = makeShaderDataDefinitions(code);
         this.initWebGPU();
@@ -43,7 +40,7 @@ export default class SimpleLineProgram {
 
         this.vertexCount = positions.length / 3;
 
-        const vertexBuffer = createBuffersAndAttributesFromArrays(this.gpuinfo.device, {
+        const vertexBuffer = createBuffersAndAttributesFromArrays(this.context.device, {
             position: { data: positions, numComponents: 3 },
             colors: { data: colors, numComponents: 4 }
         }, { interleave: true }).buffers[0];
@@ -58,7 +55,7 @@ export default class SimpleLineProgram {
     }
 
     refreshUniform(camera: Camera, projection: Projection) {
-        const device = this.gpuinfo.device;
+        const device = this.context.device;
         const sceneView = makeStructuredView(this.definition.uniforms.scene);
         if (!this.sceneUniform) {
             this.sceneUniform = device.createBuffer({
@@ -75,12 +72,12 @@ export default class SimpleLineProgram {
     }
 
     initWebGPU() {
-        this.module = this.gpuinfo.device.createShaderModule({
+        this.module = this.context.device.createShaderModule({
             label: this.label,
             code
         });
 
-        this.sceneBindGroupLayout = this.gpuinfo.device.createBindGroupLayout({
+        this.sceneBindGroupLayout = this.context.device.createBindGroupLayout({
             label: this.label,
             entries: [
                 {
@@ -91,11 +88,11 @@ export default class SimpleLineProgram {
             ]
         });
 
-        const pipelineLayout = this.gpuinfo.device.createPipelineLayout({
+        const pipelineLayout = this.context.device.createPipelineLayout({
             bindGroupLayouts: [this.sceneBindGroupLayout]
         });
 
-        this.pipeline = this.gpuinfo.device.createRenderPipeline({
+        this.pipeline = this.context.device.createRenderPipeline({
             label: this.label,
             layout: pipelineLayout,
             vertex: {
@@ -114,7 +111,7 @@ export default class SimpleLineProgram {
                 module: this.module,
                 targets: [
                     {
-                        format: this.canvasinfo.context.getConfiguration()!.format,
+                        format: this.context.canvas.context.getConfiguration()!.format,
                     }
                 ]
             },
@@ -135,7 +132,7 @@ export default class SimpleLineProgram {
 
         this.refreshUniform(camera, projection);
 
-        const sceneBindGroup = this.gpuinfo.device.createBindGroup({
+        const sceneBindGroup = this.context.device.createBindGroup({
             layout: this.sceneBindGroupLayout,
             entries: [
                 { binding: 0, resource: { buffer: this.sceneUniform } }

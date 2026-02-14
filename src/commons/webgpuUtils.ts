@@ -6,6 +6,57 @@ export interface GPUInfo {
     device: GPUDevice
 }
 
+export interface WebGPUContext {
+    gpu: GPU
+    adapter: GPUAdapter
+    device: GPUDevice
+    canvas?: {
+        element?: HTMLCanvasElement
+        context?: GPUCanvasContext
+    }
+}
+
+export type WebGPUCanvasConfigture = Partial<Omit<GPUCanvasConfiguration, "device" | "format"> & Partial<Pick<GPUCanvasConfiguration, "format">>>
+
+export async function createWebGPUContext(canvas?: HTMLCanvasElement, features?: GPUFeatureName[], canvasConfig?: WebGPUCanvasConfigture): Promise<WebGPUContext | null> {
+
+    const gpu = navigator.gpu;
+    const adapter = await gpu.requestAdapter();
+    if (adapter === null) {
+        return null;
+    }
+    const requiredFeatures: GPUFeatureName[] = features ?? [];
+    const device = await adapter?.requestDevice({
+        requiredFeatures
+    });
+    if (device === null) {
+        return null;
+    }
+    const context: WebGPUContext = {
+        gpu,
+        adapter,
+        device
+    }
+    if (canvas !== null) {
+        context.canvas = {};
+        context.canvas.element = canvas;
+        const canvasCtx = canvas.getContext('webgpu') as GPUCanvasContext | null;
+        const config = canvasConfig ?? {};
+        if (config.format == null) {
+            config.format = navigator.gpu.getPreferredCanvasFormat()
+        }
+        const fullConfig: GPUCanvasConfiguration = {
+            device,
+            ...config
+        } as GPUCanvasConfiguration;
+        canvasCtx.configure(fullConfig);
+        context.canvas.context = canvasCtx;
+    }
+
+    return context;
+
+}
+
 export async function createGPUInfo(options: createGPUInfoOptions = {}): Promise<GPUInfo | null> {
 
     const gpu = navigator.gpu;
@@ -241,9 +292,12 @@ export function createRenderPassDescriptor(info: RenderPassInfo): GPURenderPassD
     return passDescriptor;
 }
 
-export function createDepthTexture(gpuinfo: GPUInfo, width: number, height: number, format: GPUTextureFormat = 'depth32float'): GPUTexture {
+export function createDepthTexture(context: WebGPUContext, format: GPUTextureFormat = 'depth32float'): GPUTexture {
 
-    const depthTexture = gpuinfo.device.createTexture({
+    const width = context.canvas.element.width;
+    const height = context.canvas.element.height;
+
+    const depthTexture = context.device.createTexture({
         label: "depthTexture",
         size: [width, height],
         format,

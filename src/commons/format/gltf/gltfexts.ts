@@ -1,5 +1,4 @@
 import type { NumArr2 } from "../../defines";
-import { mat3 } from "gl-matrix";
 import { GLTFTextureInfo, type TGLTF } from "./gltf";
 
 export const GLTFExtensions = {

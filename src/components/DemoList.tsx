@@ -9,17 +9,18 @@ const Content = (props) => {
 
     return (
         <Box className='DemoListBox'>
-            {demos.map((d) => (
-                <Box className="DemoOption" key={d.name} onClick={() => {
-                    const frame = document.getElementById('demo-frame');
-                    frame.setAttribute('src', d.url);
-                }} onDoubleClick={() => {
-                    window.open(d.url, "_blank");
-                }}>
-                    <Box className='DemoOptionName'>{d.name}</Box>
-                    <Box className='DemoOptionDescription'>{d.description}</Box>
-                </Box>
-            ))}
+            {demos.filter(d => !d.hidden)
+                .map((d) => (
+                    <Box className="DemoOption" key={d.name} onClick={() => {
+                        const frame = document.getElementById('demo-frame');
+                        frame.setAttribute('src', d.url);
+                    }} onDoubleClick={() => {
+                        window.open(d.url, "_blank");
+                    }}>
+                        <Box className='DemoOptionName'>{d.name}</Box>
+                        <Box className='DemoOptionDescription'>{d.description}</Box>
+                    </Box>
+                ))}
         </Box>
     );
 };

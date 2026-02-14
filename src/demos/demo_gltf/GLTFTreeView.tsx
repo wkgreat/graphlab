@@ -3,7 +3,7 @@ import 'react-complex-tree/lib/style.css';
 import './tree.css';
 import { UncontrolledTreeEnvironment, Tree, StaticTreeDataProvider, type TreeItemIndex, type TreeItem } from 'react-complex-tree';
 import type GLTF from "../../commons/format/gltf/gltf";
-import { GLTFNode, type GLTFMesh, type GLTFPrimitive } from "../../commons/format/gltf/gltf";
+import { GLTFMesh, GLTFNode, type GLTFPrimitive } from "../../commons/format/gltf/gltf";
 
 interface GLTFTreeViewProps {
     gltf: GLTF | null
@@ -73,7 +73,6 @@ function parseGLTFData(gltf: GLTF | null): Record<TreeItemIndex, GLTFTreeItem<an
         const alias = `node:${ref}:${name}`;
         const key = `${parent}:${alias}`;
         const childrenKey = `${key}-children`;
-        const meshKey = `${key}-mesh`;
         data[parent].children.push(key);
         data[key] = {
             index: key,
@@ -84,14 +83,7 @@ function parseGLTFData(gltf: GLTF | null): Record<TreeItemIndex, GLTFTreeItem<an
         }
 
         if (node.mesh != null) {
-            data[key].children.push(meshKey);
-            data[meshKey] = {
-                index: meshKey,
-                isFolder: true,
-                children: [],
-                data: "mesh"
-            }
-            parseMesh(gltf, data, meshKey, gltf.meshes[node.mesh]);
+            parseMesh(gltf, data, key, gltf.meshes[node.mesh]);
         }
 
         if (node.json.children) {
@@ -120,7 +112,8 @@ function parseGLTFData(gltf: GLTF | null): Record<TreeItemIndex, GLTFTreeItem<an
             index: key,
             isFolder: true,
             children: [],
-            data: alias
+            data: alias,
+            object: mesh
         }
 
         data[parent].children.push(key);
@@ -173,6 +166,22 @@ function genItemTitle(props: GLTFTreeViewProps, item: GLTFTreeItem<string>) {
                     node.disable();
                 }
             }} defaultChecked={node.enabled}></input>
+            {item.data}
+        </>);
+    } if (item.object instanceof GLTFMesh) {
+        const mesh = item.object as GLTFMesh;
+
+        return (<>
+            <input type='checkbox' onClick={(e) => {
+                e.stopPropagation();
+            }} onChange={(e) => {
+                const b = e.currentTarget.checked;
+                if (b) {
+                    mesh.enable();
+                } else {
+                    mesh.disable();
+                }
+            }} defaultChecked={mesh.enabled}></input>
             {item.data}
         </>);
     } else {

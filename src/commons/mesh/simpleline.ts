@@ -1,7 +1,7 @@
 import { createBuffersAndAttributesFromArrays, type BuffersAndAttributes } from "webgpu-utils"
 import type Scene from "../scene"
 import code from "../shader/simpleline.wgsl"
-import type { CanvasGPUInfo, GPUInfo } from "../webgpuUtils"
+import type { CanvasGPUInfo, GPUInfo, WebGPUContext } from "../webgpuUtils"
 
 export type LineTopology = 'line-strip' | 'line-list'
 
@@ -22,9 +22,8 @@ export default class SimpleLine {
     #indices: Uint32Array
 
     #webgpu: {
-        gpuinfo?: GPUInfo
-        canvasinfo?: CanvasGPUInfo
-        scene?: Scene,
+        context?: WebGPUContext
+        scene?: Scene
         buffer?: BuffersAndAttributes
         module?: GPUShaderModule
         pipeline?: GPURenderPipeline
@@ -50,9 +49,8 @@ export default class SimpleLine {
         return this.#colors;
     }
 
-    initWebGPU(gpuinfo: GPUInfo, canvasinfo: CanvasGPUInfo, scene: Scene) {
-        this.#webgpu.gpuinfo = gpuinfo;
-        this.#webgpu.canvasinfo = canvasinfo;
+    initWebGPU(context: WebGPUContext, scene: Scene) {
+        this.#webgpu.context = context;
         this.#webgpu.scene = scene;
 
         this.refreshUniforms();
@@ -69,11 +67,11 @@ export default class SimpleLine {
 
     refreshVertexBuffers(force: boolean = false) {
 
-        if (!this.#webgpu.gpuinfo) {
+        if (!this.#webgpu.context) {
             return;
         }
 
-        const device = this.#webgpu.gpuinfo.device;
+        const device = this.#webgpu.context.device;
 
         if (force || !this.#webgpu.buffer) {
             if (!this.colors) {
@@ -111,7 +109,7 @@ export default class SimpleLine {
     }
 
     createPileline() {
-        const device = this.#webgpu.gpuinfo.device;
+        const device = this.#webgpu.context.device;
 
         this.#webgpu.module = device.createShaderModule({
             label: this.#label,
@@ -135,7 +133,7 @@ export default class SimpleLine {
                 module: this.#webgpu.module,
                 targets: [
                     {
-                        format: this.#webgpu.canvasinfo.context.getConfiguration().format,
+                        format: this.#webgpu.context.canvas.context.getConfiguration().format,
                     }
                 ]
             },
