@@ -11,6 +11,9 @@ import { random } from '../../commons/utils';
 import { createDepthTexture, createRenderPassDescriptor, createWebGPUContext, type WebGPUContext } from "../../commons/webgpuUtils";
 import './styles.css';
 import { Pane } from 'tweakpane';
+import { PLYLoader } from '../../commons/format/ply/plyformat';
+import gsPointcloudURL from '/data/3dgs/cactus_splat3_30kSteps_142k_splats.ply?url';
+import bunnyBinRUL from '/data/mesh/bun_zipper_bin.ply?url';
 
 class GeometryDemo {
 
@@ -311,7 +314,12 @@ function main() {
     demo.onReady(demo => {
         demo.setPane();
         demo.draw();
-    })
+    });
+
+    PLYLoader.loadByWorker(gsPointcloudURL, (ply) => {
+        console.log("ply load finish");
+        console.log(ply);
+    });
 
 }
 

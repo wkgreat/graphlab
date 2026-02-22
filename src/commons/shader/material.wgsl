@@ -4,34 +4,34 @@
 //TODO 当前transmission临时按透明度实现，支持基于物理的transmission
 
 struct TextureTransform {
-    offset: vec2f,
-    rotation: f32,
-    scale: vec2f
+    @align(16) offset: vec2f,
+    @align(16) rotation: f32,
+    @align(16) scale: vec2f
 };
 
 struct TextureInfo {
-    hasTexture: u32,
-    hasTextureTransform: u32,
-    textureTransform: TextureTransform
+    @align(16) hasTexture: u32,
+    @align(16) hasTextureTransform: u32,
+    @align(16) textureTransform: TextureTransform
 };
 
 struct PbrMaterialUniform {
-    baseColorFactor: vec4f,
-    baseColorTexture: TextureInfo,
-    metallicFactor: f32,
-    roughnessFactor: f32,
-    metallicRoughnessTexture: TextureInfo,
-    normalScale: f32,
-    normalTexture: TextureInfo,
-    emmissiveFactor: vec3f,
-    emmissiveTexture: TextureInfo,
-    occlusionStrength: f32,
-    occlusionTexture: TextureInfo,
-    alphaMode: u32,
-    alphaCutoff: f32,
+     @align(16) baseColorFactor: vec4f,
+     @align(16) baseColorTexture: TextureInfo,
+     @align(16) metallicFactor: f32,
+     @align(16) roughnessFactor: f32,
+     @align(16) metallicRoughnessTexture: TextureInfo,
+     @align(16) normalScale: f32,
+     @align(16) normalTexture: TextureInfo,
+     @align(16) emmissiveFactor: vec3f,
+     @align(16) emmissiveTexture: TextureInfo,
+     @align(16) occlusionStrength: f32,
+     @align(16) occlusionTexture: TextureInfo,
+     @align(16) alphaMode: u32,
+     @align(16) alphaCutoff: f32,
 
-    hasTransmission: u32,
-    transmissionFactor: f32
+    @align(16) hasTransmission: u32,
+    @align(16) transmissionFactor: f32
     // transmissionTexture: TextureInfo //TODO 支持 transmission texture
 };
 

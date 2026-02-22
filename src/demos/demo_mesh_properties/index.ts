@@ -3,7 +3,7 @@ import { Pane } from 'tweakpane';
 import Camera, { CameraMouseControl } from '../../commons/camera';
 import { Ground } from '../../commons/objects';
 import Projection from '../../commons/projection';
-import { createCanvasGPUInfo, createDepthTexture, createGPUInfo, createRenderPassDescriptor, createWebGPUContext, type CanvasGPUInfo, type GPUInfo, type WebGPUContext } from '../../commons/webgpuUtils';
+import { createDepthTexture, createRenderPassDescriptor, createWebGPUContext, type WebGPUContext } from '../../commons/webgpuUtils';
 import './styles.css';
 
 import bunnyURL from '/data/mesh/bun_zipper.ply?url';
@@ -18,7 +18,7 @@ import Mesh, { MeshSelectMode } from '../../commons/mesh/mesh';
 import { RenderSpace } from '../../commons/mesh/object';
 import type SimpleLine from '../../commons/mesh/simpleline';
 import Scene from '../../commons/scene';
-import PLYMeshData from '../../commons/format/ply/plyformat';
+import { PLYLoader } from '../../commons/format/ply/plyformat';
 
 class MeshDemo {
 
@@ -176,8 +176,8 @@ class MeshDemo {
 
     loadMesh(meshinfo: MeshInfo) {
         if (this.ready) {
-            PLYMeshData.loadFromURL(meshinfo.url).then(data => {
-                const mesh = data.toMesh();
+            PLYLoader.load(meshinfo.url).then(ply => {
+                const mesh = ply.toMesh();
                 mesh.setModelMatrix(meshinfo.modelmtx);
                 mesh.lighting = this.paneParams.lighting;
                 mesh.wireframe = this.paneParams.wireframe.enable;

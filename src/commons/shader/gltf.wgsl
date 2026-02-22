@@ -37,7 +37,7 @@ struct ModelUniform {
     normalmtx: mat4x4f,
     tangentmtx: mat4x4f,
     hasTangent: u32,
-    texcoordOrder: TexCoordOrder
+    @align(16) texcoordOrder: TexCoordOrder
 };
 
 @group(2) @binding(0) var<uniform> model: ModelUniform;
