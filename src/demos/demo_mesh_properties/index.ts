@@ -6,10 +6,10 @@ import Projection from '../../commons/projection';
 import { createDepthTexture, createRenderPassDescriptor, createWebGPUContext, type WebGPUContext } from '../../commons/webgpuUtils';
 import './styles.css';
 
-import bunnyURL from '/data/mesh/bun_zipper.ply?url';
-import bunnyRes2URL from '/data/mesh/bun_zipper_res2.ply?url';
-import bunnyRes3URL from '/data/mesh/bun_zipper_res3.ply?url';
-import bunnyRes4URL from '/data/mesh/bun_zipper_res4.ply?url';
+import bunnyURL from '/data/mesh/ply/bunny/bun_zipper.ply?url';
+import bunnyRes2URL from '/data/mesh/ply/bunny/bun_zipper_res2.ply?url';
+import bunnyRes3URL from '/data/mesh/ply/bunny/bun_zipper_res3.ply?url';
+import bunnyRes4URL from '/data/mesh/ply/bunny/bun_zipper_res4.ply?url';
 
 import { mat4, vec3 } from 'gl-matrix';
 import PointLight from '../../commons/light';

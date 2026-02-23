@@ -11,6 +11,7 @@ import HalfEdgeInfo from './halfedge';
 import RenderObject, { type RenderObjectOptions, type RenderOptions } from './object';
 import SimpleLine from './simpleline';
 import { AABB } from '../objects/box';
+import type { IntArray } from '../arraybuffer';
 
 export type MeshColorMode = 'vertex' | 'face' | 'mesh'
 
@@ -33,7 +34,7 @@ export default class Mesh extends RenderObject {
     normals?: Float32Array
     texcoords?: Float32Array
 
-    vertexIndices?: Uint32Array
+    vertexIndices?: IntArray
     wireframeVertexIndices?: Uint32Array
 
     textureIndices?: Uint32Array

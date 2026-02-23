@@ -1,3 +1,5 @@
+import { type IntArray, type TypedArray, type TypedArrayConstructor } from "../../arraybuffer";
+import { logger } from "../../logger";
 import Mesh from "../../mesh/mesh";
 import { objectNumKeys } from "../../utils";
 import PLYWorker from './plyworker.ts?worker'
@@ -14,6 +16,23 @@ export const PLYDataTypes = {
 } as const;
 export type PLYDataTypes = typeof PLYDataTypes[keyof typeof PLYDataTypes];
 
+export interface PLYDataTypeInfo {
+    ctor: TypedArrayConstructor,
+    elemBytes: number,
+    read: (bin: PLYBinaryInfo) => number
+}
+
+export const PLYDataTypeInfos: Record<string, PLYDataTypeInfo> = {
+    char: { ctor: Int8Array, elemBytes: 1, read: (b) => b.data.getInt8(b.cursor) },
+    uchar: { ctor: Uint8Array, elemBytes: 1, read: (b) => b.data.getUint8(b.cursor) },
+    short: { ctor: Int16Array, elemBytes: 2, read: (b) => b.data.getInt16(b.cursor, b.littleEndian) },
+    ushort: { ctor: Uint16Array, elemBytes: 2, read: (b) => b.data.getUint16(b.cursor, b.littleEndian) },
+    int: { ctor: Int32Array, elemBytes: 4, read: (b) => b.data.getInt32(b.cursor, b.littleEndian) },
+    uint: { ctor: Uint32Array, elemBytes: 4, read: (b) => b.data.getUint32(b.cursor, b.littleEndian) },
+    float: { ctor: Float32Array, elemBytes: 4, read: (b) => b.data.getFloat32(b.cursor, b.littleEndian) },
+    double: { ctor: Float32Array, elemBytes: 8, read: (b) => b.data.getFloat64(b.cursor, b.littleEndian) }
+} as const;
+
 export const PLYDataTypeBytes = {
     char: 1,
     uchar: 1,
@@ -28,17 +47,21 @@ export const PLYDataTypeBytes = {
 export interface PLYProperty {
     index: number,
     name: string,
-    list: boolean,
+    list?: boolean,
     lentype?: PLYDataTypes,
-    elmtype: PLYDataTypes,
-    lenData: number[],
-    data: (number | number[])[]
+    listLenData?: TypedArray,
+    listidx?: number,
+    offsetData?: Int32Array,
+    elmtype?: PLYDataTypes,
+    data?: TypedArray
 };
 
 export interface PLYElement {
     index: number,
+    name: string,
     count: number,
     properties: Record<string, PLYProperty>
+    propindex: Record<number, string>
 };
 
 export default class PLYMeshData {
@@ -48,6 +71,25 @@ export default class PLYMeshData {
     formatVersion?: string;
 
     elements: Record<string, PLYElement> = {}
+    elemindex: Record<number, string> = {}
+
+    getElementByIndex(idx: number) {
+        return this.elements[this.elemindex[idx]];
+    }
+
+    getElementByName(name: string) {
+        return this.elements[name];
+    }
+
+    getPropertyByIndex(elemIdx, propIdx: number) {
+        const element = this.getElementByIndex(elemIdx);
+        return element.properties[element.propindex[propIdx]];
+    }
+
+    getPropertyByName(elem: string, prop: string) {
+        const element = this.getElementByName(elem);
+        return element.properties[prop];
+    }
 
     constructor() {}
 
@@ -57,9 +99,9 @@ export default class PLYMeshData {
 
         const vertexData = this.elements["vertex"];
 
-        const xData = vertexData.properties["x"].data as number[];
-        const yData = vertexData.properties["y"].data as number[];
-        const zData = vertexData.properties["z"].data as number[];
+        const xData = vertexData.properties["x"].data;
+        const yData = vertexData.properties["y"].data;
+        const zData = vertexData.properties["z"].data;
 
         //positions
         mesh.positions = new Float32Array(vertexData.count * 3);
@@ -78,18 +120,11 @@ export default class PLYMeshData {
         }
 
         const faceData = this.elements["face"];
-        const indexData = faceData.properties["vertex_indices"].data as number[][];
-
-        const trippleIndexData = indexData.filter(a => a.length === 3);
-
-        if (trippleIndexData.length < faceData.count) {
-            console.warn("face 存在不为三角形的情况");
-        }
-
+        const indexData = faceData.properties["vertex_indices"].data;
 
         //TODO 这里假设都为三角形，考虑face为四边形的情况
         //TODO 考虑类型
-        mesh.vertexIndices = new Uint32Array(trippleIndexData.flat());
+        mesh.vertexIndices = indexData as IntArray;
 
         return mesh;
 
@@ -151,10 +186,13 @@ export class PLYLoader {
             const index = Object.keys(ply.elements).length;
             ply.elements[element] = {
                 index,
+                name: element,
                 count,
                 properties: {},
+                propindex: {}
 
             }
+            ply.elemindex[index] = element;
             info.curElement = element;
             return;
         }
@@ -172,9 +210,10 @@ export class PLYLoader {
                     list: true,
                     lentype,
                     elmtype,
-                    data: []
-
+                    listidx: 0,
                 }
+                ply.elements[info.curElement]!.propindex[index] = name;
+
             } else {
                 const elmtype = words[1] as PLYDataTypes;
                 const name = words[2];
@@ -184,9 +223,9 @@ export class PLYLoader {
                     name,
                     list: false,
                     elmtype,
-                    data: []
-
+                    listidx: 0,
                 }
+                ply.elements[info.curElement]!.propindex[index] = name;
             }
             return;
         }
@@ -197,23 +236,91 @@ export class PLYLoader {
         }
     }
 
+    static initPropertyData(ply: PLYMeshData) {
+        const nElements = Object.keys(ply.elements).length;
+
+        // for each element
+        for (let e = 0; e < nElements; ++e) {
+            const element = ply.getElementByIndex(e);
+            const propertyNames = Object.keys(element.properties);
+
+            //init buffer
+            for (const propName of propertyNames) {
+                const property = element.properties[propName];
+                if (property.list) {
+                    property.listLenData = new PLYDataTypeInfos[property.lentype].ctor(element.count);
+                    property.offsetData = new Int32Array(element.count);
+                } else {
+                    const data: TypedArray = new PLYDataTypeInfos[property.elmtype].ctor(element.count);
+                    property.data = data;
+                }
+            }
+        }
+    }
+
+    static initListPropertyData(ply: PLYMeshData) {
+        const nElements = Object.keys(ply.elements).length;
+
+        // for each element
+        for (let e = 0; e < nElements; ++e) {
+            const element = ply.getElementByIndex(e);
+            const propertyNames = Object.keys(element.properties);
+
+            //init buffer
+            for (const propName of propertyNames) {
+                const property = element.properties[propName];
+                if (property.list) {
+                    let totlen = 0;
+                    for (let i = 0; i < element.count; ++i) {
+                        totlen += property.listLenData[i];
+                    }
+                    const data: TypedArray = new PLYDataTypeInfos[property.elmtype].ctor(totlen);
+                    property.data = data;
+                }
+            }
+        }
+    }
+
     static parseAsciiBody(ply: PLYMeshData, body: string) {
+
+        logger.info("start ply parseAsciiBody");
+
+        this.initPropertyData(ply);
+
         const lines = body.split("\n");
-        const praseInfo: PLYParseInfo = {
+        let praseInfo: PLYParseInfo = {
             curElement: "",
             curElementIdx: -1,
             curCount: 0,
             curNumProperties: 0
         }
+
         for (const line of lines) {
             if (line.trim().length === 0) {
                 continue;
             }
-            PLYLoader.parseAsciiBodyLine(ply, praseInfo, line);
+            this.parseAsciiBodyLine(ply, praseInfo, line, false);
         }
+
+        this.initListPropertyData(ply);
+
+        praseInfo = {
+            curElement: "",
+            curElementIdx: -1,
+            curCount: 0,
+            curNumProperties: 0
+        }
+
+        for (const line of lines) {
+            if (line.trim().length === 0) {
+                continue;
+            }
+            this.parseAsciiBodyLine(ply, praseInfo, line, true);
+        }
+
     }
 
-    static parseAsciiBodyLine(ply: PLYMeshData, info: PLYParseInfo, line: string) {
+    static parseAsciiBodyLine(ply: PLYMeshData, info: PLYParseInfo, line: string, forListData: boolean) {
         if (info.curElement === '') {
             info.curElementIdx = 0;
             info.curElement = (Object.entries(ply.elements).filter(e => e[1].index === 0))[0][0];
@@ -231,110 +338,121 @@ export class PLYLoader {
         for (let i = 0, p = 0; i < info.curNumProperties; ++i) {
             const entry = Object.entries(ply.elements[info.curElement].properties).filter(e => e[1].index === i)[0];
             const name = entry[0];
-            if (entry[1].list) {
-                const len = parseFloat(words[p]);
-                // ply.elements[curElement].properties[name].data.push(...words.slice(p, p + len + 1).map(w => parseFloat(w)));
-                ply.elements[info.curElement].properties[name].data.push(words.slice(p + 1, p + len + 1).map(w => parseFloat(w)));
-                p += len + 1;
+            const property = ply.elements[info.curElement].properties[name];
+            if (forListData) {
+                if (property.list) {
+                    const len = property.listLenData[info.curCount];
+                    const p = property.offsetData[info.curCount];
+                    for (let v = 0; v < len; ++v) {
+                        property.data[property.listidx++] = parseFloat(words[p + 1 + v]);
+                    }
+                }
             } else {
-                ply.elements[info.curElement].properties[name].data.push(parseFloat(words[p]));
-                p += 1;
+                if (property.list) {
+                    const len = parseInt(words[p]);
+                    property.listLenData[info.curCount] = len;
+                    property.offsetData[info.curCount] = p;
+                    p += len + 1;
+                } else {
+                    property.data[info.curCount] = parseFloat(words[p]);
+                    p += 1;
+                }
             }
+
         }
         info.curCount++;
     }
 
-    private static getElement(ply: PLYMeshData, idx: number) {
-        for (const entry of Object.entries(ply.elements)) {
-            if (entry[1].index === idx) {
-                return ply.elements[entry[0]];
-            }
+    static readNumber(bin: PLYBinaryInfo, typ: PLYDataTypes, move: boolean = true): number {
+        const num = PLYDataTypeInfos[typ].read(bin);
+        if (move) {
+            bin.cursor += PLYDataTypeBytes[typ];
         }
-        return null;
-    }
-
-    private static getProperty(element: PLYElement, idx: number) {
-        for (const entry of Object.entries(element.properties)) {
-            if (entry[1].index === idx) {
-                return element.properties[entry[0]];
-            }
-        }
-        return null;
-    }
-
-    static readNumber(bin: PLYBinaryInfo, typ: PLYDataTypes): number {
-        let num = 0;
-        switch (typ) {
-            case PLYDataTypes.uchar:
-                num = bin.data.getUint8(bin.cursor);
-                break;
-            case PLYDataTypes.char:
-                num = bin.data.getInt8(bin.cursor);
-                break;
-            case PLYDataTypes.ushort:
-                num = bin.data.getUint16(bin.cursor, bin.littleEndian);
-                break;
-            case PLYDataTypes.short:
-                num = bin.data.getInt16(bin.cursor, bin.littleEndian);
-                break;
-            case PLYDataTypes.uint:
-                num = bin.data.getUint32(bin.cursor, bin.littleEndian);
-                break;
-            case PLYDataTypes.int:
-                num = bin.data.getInt32(bin.cursor, bin.littleEndian);
-                break;
-            case PLYDataTypes.float:
-                num = bin.data.getFloat32(bin.cursor, bin.littleEndian);
-                break;
-            case PLYDataTypes.double:
-                num = bin.data.getFloat64(bin.cursor, bin.littleEndian);
-                break;
-        }
-        bin.cursor += PLYDataTypeBytes[typ];
         return num;
     }
 
-    static readProperty(bin: PLYBinaryInfo, prop: PLYProperty) {
-        if (prop.list) {
-            const listLen = PLYLoader.readNumber(bin, prop.lentype);
-            const values: number[] = [];
-            for (let i = 0; i < listLen; ++i) {
-                values.push(PLYLoader.readNumber(bin, prop.elmtype));
-            }
-            prop.data.push(values);
+    static readProperty(bin: PLYBinaryInfo, n: number, element: PLYElement, property: PLYProperty) {
+        if (property.list) {
+            property.offsetData[n] = bin.cursor;
+            const listLen = this.readNumber(bin, property.lentype);
+            property.listLenData[n] = listLen;
+            const numBytes = listLen * PLYDataTypeBytes[property.elmtype];
+            // skip list data read
+            bin.cursor += numBytes;
         } else {
-            prop.data.push(PLYLoader.readNumber(bin, prop.elmtype));
+            property.data[n] = this.readNumber(bin, property.elmtype);
         }
     }
 
-    static createSinglePropertyBuffer(element: PLYElement, property: PLYProperty): ArrayBuffer {
-        const propBytes = PLYDataTypeBytes[property.elmtype];
-        const elemCount = element.count;
-        const buffer = new ArrayBuffer(propBytes * elemCount);
-        return buffer;
+
+    static readListProperty(bin: PLYBinaryInfo, n: number, property: PLYProperty) {
+        bin.cursor = property.offsetData[n];
+        const listLen = this.readNumber(bin, property.lentype);
+        property.listLenData[n] = listLen;
+        for (let i = 0; i < listLen; ++i) {
+            property.data[property.listidx++] = this.readNumber(bin, property.elmtype);
+        }
     }
 
     static parseBinBody(ply: PLYMeshData, bin: PLYBinaryInfo) {
+
+        logger.info("ply parseBinBody start");
+
         const nElements = Object.keys(ply.elements).length;
+
+        this.initPropertyData(ply);
+
+        // for each element
         for (let e = 0; e < nElements; ++e) {
-            const element = PLYLoader.getElement(ply, e);
+            const element = ply.getElementByIndex(e);
+            const propertyNames = Object.keys(element.properties);
+
             const count = element.count;
-            const nProps = Object.keys(element.properties).length;
-            for (let c = 0; c < count; ++c) {
-                if (c % 100 === 0) {
-                    console.log(`element: ${c}/${count}`);
+            const step = count / 10;
+
+            // read single property buffer
+            logger.info("read single property buffer");
+            for (let v = 0; v < element.count; ++v) {
+
+                if (v % step === 0) {
+                    const t = v / step * 10;
+                    logger.info(`Element: ${element.name}, Progress: ${t}%`);
                 }
-                for (let p = 0; p < nProps; ++p) {
-                    const prop = PLYLoader.getProperty(element, p);
-                    PLYLoader.readProperty(bin, prop);
+
+                for (let p = 0; p < propertyNames.length; ++p) {
+                    const property = ply.getPropertyByIndex(e, p);
+                    this.readProperty(bin, v, element, property);
+                }
+            }
+
+            this.initListPropertyData(ply);
+
+            // read list property buffer
+            logger.info("read list property buffer");
+            for (let v = 0; v < element.count; ++v) {
+
+                if (v % step == 0) {
+                    const t = v / step * 10;
+                    logger.info(`Element: ${element.name}, Progress: ${t}%`);
+                }
+
+                for (let p = 0; p < propertyNames.length; ++p) {
+                    const property = ply.getPropertyByIndex(e, p);
+                    if (property.list) {
+                        console.log("here");
+                        logger.info("read list property buffer");
+                        this.readListProperty(bin, v, property);
+                    }
                 }
             }
         }
+
+        logger.info("ply parseBinBody finish");
     }
 
     static async load(uri: string) {
 
-        console.log("start ply load");
+        logger.info(`ply load start ${uri}`);
 
         const response = await fetch(uri);
         const arrayBuffer = await response.arrayBuffer();
@@ -370,13 +488,15 @@ export class PLYLoader {
             PLYLoader.parseBinBody(ply, bin);
         }
 
+        logger.info(`ply load finish`);
+
         return ply;
     }
 
     static loadByWorker(uri: string, callback: (ply: PLYMeshData) => void): string {
+        logger.info("start ply loadByWorker");
         const worker = new PLYWorker();
         worker.onmessage = (e) => {
-            console.log("xxxxx", e);
             callback(e.data.ply);
         }
         const taskId = crypto.randomUUID();
