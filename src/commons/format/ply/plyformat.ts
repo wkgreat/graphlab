@@ -33,17 +33,6 @@ export const PLYDataTypeInfos: Record<string, PLYDataTypeInfo> = {
     double: { ctor: Float32Array, elemBytes: 8, read: (b) => b.data.getFloat64(b.cursor, b.littleEndian) }
 } as const;
 
-export const PLYDataTypeBytes = {
-    char: 1,
-    uchar: 1,
-    short: 2,
-    ushort: 2,
-    int: 4,
-    uint: 4,
-    float: 4,
-    double: 8
-}
-
 export interface PLYProperty {
     index: number,
     name: string,
@@ -366,7 +355,7 @@ export class PLYLoader {
     static readNumber(bin: PLYBinaryInfo, typ: PLYDataTypes, move: boolean = true): number {
         const num = PLYDataTypeInfos[typ].read(bin);
         if (move) {
-            bin.cursor += PLYDataTypeBytes[typ];
+            bin.cursor += PLYDataTypeInfos[typ].elemBytes;
         }
         return num;
     }
@@ -376,7 +365,7 @@ export class PLYLoader {
             property.offsetData[n] = bin.cursor;
             const listLen = this.readNumber(bin, property.lentype);
             property.listLenData[n] = listLen;
-            const numBytes = listLen * PLYDataTypeBytes[property.elmtype];
+            const numBytes = listLen * PLYDataTypeInfos[property.elmtype].elemBytes;
             // skip list data read
             bin.cursor += numBytes;
         } else {
