@@ -420,7 +420,7 @@ export class PLYLoader {
             logger.info("read list property buffer");
             for (let v = 0; v < element.count; ++v) {
 
-                if (v % step == 0) {
+                if (v % step === 0) {
                     const t = v / step * 10;
                     logger.info(`Element: ${element.name}, Progress: ${t}%`);
                 }
@@ -428,7 +428,6 @@ export class PLYLoader {
                 for (let p = 0; p < propertyNames.length; ++p) {
                     const property = ply.getPropertyByIndex(e, p);
                     if (property.list) {
-                        console.log("here");
                         logger.info("read list property buffer");
                         this.readListProperty(bin, v, property);
                     }
