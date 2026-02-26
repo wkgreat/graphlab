@@ -279,14 +279,16 @@ export default class GaussianSplat {
                             format: this.webgpu.context.canvas.context.getConfiguration().format,
                             blend: {
                                 color: {
-                                    srcFactor: "one",
-                                    dstFactor: "one-minus-src-alpha",
-                                    operation: "add"
+                                    // 目标颜色 = 当前片段颜色 * 当前Alpha + 缓冲颜色 * (1 - 当前Alpha)
+                                    srcFactor: 'src-alpha',
+                                    dstFactor: 'one-minus-src-alpha',
+                                    operation: 'add',
                                 },
                                 alpha: {
-                                    srcFactor: "one",
-                                    dstFactor: "one-minus-src-alpha",
-                                    operation: "add"
+                                    // 目标Alpha = 当前片段Alpha * 1 + 缓冲Alpha * (1 - 当前Alpha)
+                                    srcFactor: 'one',
+                                    dstFactor: 'one-minus-src-alpha',
+                                    operation: 'add',
                                 }
                             }
                         }

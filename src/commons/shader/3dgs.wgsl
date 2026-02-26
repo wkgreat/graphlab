@@ -88,7 +88,7 @@ fn sh_color(dview: vec3f, sh: array<vec4f,16>) -> vec3f {
     result += SH_C3[5] * z * (x2 - y2) * sh[14].rgb;
     result += SH_C3[6] * x * (x2 - 3.0 * y2) * sh[15].rgb;
 
-    return max(result, vec3<f32>(0.0)); 
+    return max(result + 0.5, vec3<f32>(0.0)); 
 }
 
 struct VSInput {
