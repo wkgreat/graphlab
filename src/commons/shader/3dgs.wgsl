@@ -3,15 +3,14 @@
 fn computeJacobian(splatviewpos: vec3f) -> mat3x2f {
     let x = splatviewpos.x;
     let y = splatviewpos.y;
-    let z = splatviewpos.z;
+    let z = min(-0.05, splatviewpos.z);
     let z2 = z * z;
     let height = scene.viewport.height;
     let width = scene.viewport.width;
     let fovy = scene.projection.fovy;
     let aspect = scene.projection.aspect;
-
-    let fy = height / (2 * tan(fovy / 2));
-    let fx = aspect * fy;
+    let fy = height / (2.0 * tan(fovy * 0.5));
+    let fx = fy; // 使用统一焦距
     return mat3x2f(
         vec2f(fx / z, 0.0),            
         vec2f(0.0, fy / z),            
@@ -22,14 +21,17 @@ fn computeJacobian(splatviewpos: vec3f) -> mat3x2f {
 fn computeAABB(splatndspos: vec2f, m2d: mat2x2f) -> vec4f {
     let u = splatndspos.x;
     let v = splatndspos.y;
-    let sxx = m2d[0][0];
-    let syy = m2d[1][1];
-    let rx = 3 * sqrt(sxx);
-    let ry = 3 * sqrt(syy);
-    let xmin = u - rx;
-    let xmax = u + rx;
-    let ymin = v - ry;
-    let ymax = v + ry;
+    let sxx = max(m2d[0][0], 0.3);
+    let syy = max(m2d[1][1], 0.3);
+    let sxy = m2d[0][1];
+    let trace = sxx + syy;
+    let det = max(sxx * syy - sxy * sxy, 1e-6);
+    let lambda_max = 0.5 * (trace + sqrt(max(0.0, trace*trace - 4.0*det)));
+    let r = clamp(3.0 * sqrt(lambda_max), 1.0, 1024.0);
+    let xmin = u - r;
+    let xmax = u + r;
+    let ymin = v - r;
+    let ymax = v + r;
     return vec4f(xmin,ymin,xmax,ymax);
 }
 
@@ -164,9 +166,11 @@ struct SplatUniform {
 
     var M2D: mat2x2f = J * (M3D * transpose(J));
 
-    // 添加低通滤波 (通常做法) 这能确保 Splat 至少占据一个像素的大小
-    M2D[0][0] += 0.3;
-    M2D[1][1] += 0.3;
+    let b = 0.5 * (M2D[0][1] + M2D[1][0]);
+    M2D[0][1] = b;
+    M2D[1][0] = b;
+    M2D[0][0] = max(0.3, M2D[0][0]);
+    M2D[1][1] = max(0.3, M2D[1][1]);
 
     let aabb = computeAABB(splatndspos.xy, M2D);
 
@@ -199,22 +203,22 @@ struct SplatUniform {
 
 fn computeWeight(d: vec2f, m2d: mat2x2f) -> f32 {
     let a = m2d[0][0];
-    let b = m2d[1][0]; // column-major
+    let b = m2d[1][0];
     let c = m2d[1][1];
-
-    let r2 = (c*d.x*d.x - 2.0*b*d.x*d.y + a*d.y*d.y) / (a*c - b*b);
+    let denom = max(a*c - b*b, 1e-6);
+    let r2 = (c*d.x*d.x - 2.0*b*d.x*d.y + a*d.y*d.y) / denom;
     let weight = exp(-0.5 * r2);
     return weight;
 }
 
-@fragment fn fs(input: VSOutput) -> FSOutput {
+@fragment fn fs(input: VSOutput) -> FSOutput {  
 
     let p = input.ndspos.xy;
     let u = input.centerndspos.xy;
     let m2d = mat2x2f(input.m2dr0, input.m2dr1);
     let d = p - u;
     let w = computeWeight(d, m2d);
-    if(w <0.011f) {
+    if(w <0.001f) {
         discard;
     }
     var color = input.color;

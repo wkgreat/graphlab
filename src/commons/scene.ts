@@ -1,14 +1,14 @@
 import { mat4, vec3, vec4 } from "gl-matrix";
-import type Camera from "./camera";
-import type Projection from "./projection";
-import { Ray } from "./objects";
-import type PointLight from "./light";
-import { bool2num, type CanvasGPUInfo, type GPUInfo, type WebGPUContext } from "./webgpuUtils";
-import sceneCode from "./shader/scene.wgsl";
 import { makeShaderDataDefinitions, makeStructuredView, type ShaderDataDefinitions } from "webgpu-utils";
-import { vec4t3 } from "./matrix";
-import type IBL from "./ibl";
+import type Camera from "./camera";
 import type EnvironmentMap from "./envmap";
+import type IBL from "./ibl";
+import type PointLight from "./light";
+import { vec4t3 } from "./matrix";
+import { Ray } from "./objects";
+import type Projection from "./projection";
+import sceneCode from "./shader/scene.wgsl";
+import { bool2num, type WebGPUContext } from "./webgpuUtils";
 
 export default class Scene {
 

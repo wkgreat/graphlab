@@ -1,9 +1,9 @@
 import { mat3, mat4, quat, vec4 } from "gl-matrix";
+import { createBuffersAndAttributesFromArrays, makeShaderDataDefinitions, makeStructuredView, type BuffersAndAttributes, type ShaderDataDefinitions } from "webgpu-utils";
 import type PLYMeshData from "../format/ply/plyformat";
 import type Scene from "../scene";
-import type { WebGPUContext } from "../webgpuUtils";
-import { createBuffersAndAttributesFromArrays, makeShaderDataDefinitions, makeStructuredView, type BuffersAndAttributes, type ShaderDataDefinitions } from "webgpu-utils";
 import shaderCode from "../shader/3dgs.wgsl";
+import type { WebGPUContext } from "../webgpuUtils";
 
 export default class GaussianSplat {
 
@@ -296,7 +296,7 @@ export default class GaussianSplat {
                             format: this.webgpu.context.canvas.context.getConfiguration().format,
                             blend: {
                                 color: {
-                                    srcFactor: 'one', // 注意这里变成了 one
+                                    srcFactor: 'one',
                                     dstFactor: 'one-minus-src-alpha',
                                     operation: 'add',
                                 },

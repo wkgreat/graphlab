@@ -207,6 +207,7 @@ function main() {
     demo.onReady((d) => {
         logger.info("GaussianSplatDemo ready");
         const modelmtx = mat4.rotateX(mat4.create(), mat4.create(), Math.PI);
+        // const modelmtx = mat4.create();
         PLYLoader.loadByWorker(plyuri, (ply) => {
             const splat = GaussianSplat.fromPLY(ply, modelmtx);
             demo.setGaussianSplat(splat);
