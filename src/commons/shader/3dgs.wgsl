@@ -115,9 +115,14 @@ struct SplatData {
     @align(16) sigma3d: mat4x4f, // mat3x3f 对齐至 mat4x4f
     @align(16) shcolor: array<vec4f, 16>
 }
-@group(1) @binding(0) var<storage, read> splatData: array<SplatData>;
 
+struct SplatUniform {
+    modelmtx: mat4x4f
+}
+
+@group(1) @binding(0) var<storage, read> splatData: array<SplatData>;
 @group(1) @binding(1) var<storage, read> splatIndex: array<u32>;
+@group(1) @binding(2) var<uniform> splatUniform: SplatUniform;
 
 //TODO 每个splat instance的数据只计算一次
 @vertex fn vs(input: VSInput) -> VSOutput {
@@ -125,13 +130,20 @@ struct SplatData {
     let index = splatIndex[input.instidx];
     let splat = splatData[index];
 
-    let splatworldpos = splat.center;
+    let modelmtx4 = splatUniform.modelmtx;
+    let modelmtx3 = mat3x3f(
+        modelmtx4[0].xyz,
+        modelmtx4[1].xyz,
+        modelmtx4[2].xyz,
+    );
+
+    var splatworldpos = modelmtx4 * splat.center;
     let splatviewpos = scene.camera.viewmtx * splatworldpos;
     var splatndcpos = scene.projection.projmtx * splatviewpos;
     splatndcpos = splatndcpos / splatndcpos.w;
     var splatndspos = scene.viewport.viewportmtx * splatndcpos;
     splatndspos = splatndspos / splatndspos.w;
-    
+
     let J = computeJacobian(splatviewpos.xyz);
 
     var M3D = mat3x3f(
@@ -139,6 +151,8 @@ struct SplatData {
         splat.sigma3d[1].xyz,
         splat.sigma3d[2].xyz
     );
+
+    M3D = modelmtx3 * M3D * transpose(modelmtx3);
 
     let W = mat3x3f(
         scene.camera.viewmtx[0].xyz,
@@ -205,6 +219,9 @@ fn computeWeight(d: vec2f, m2d: mat2x2f) -> f32 {
     }
     var color = input.color;
     color.a = color.a * w;
+    color.r = color.r * color.a;
+    color.g = color.g * color.a;
+    color.b = color.b * color.a;
     
     var output: FSOutput;
     output.color = color;

@@ -9,6 +9,7 @@ import { PLYLoader } from '../../commons/format/ply/plyformat';
 import { logger } from '../../commons/logger';
 import Scene from '../../commons/scene';
 import Axis from '../../commons/mesh/axis';
+import { mat4 } from 'gl-matrix';
 
 class GaussianSplatDemo {
 
@@ -205,10 +206,9 @@ function main() {
 
     demo.onReady((d) => {
         logger.info("GaussianSplatDemo ready");
+        const modelmtx = mat4.rotateX(mat4.create(), mat4.create(), Math.PI);
         PLYLoader.loadByWorker(plyuri, (ply) => {
-            const splat = GaussianSplat.fromPLY(ply);
-            console.log(ply);
-            console.log(splat);
+            const splat = GaussianSplat.fromPLY(ply, modelmtx);
             demo.setGaussianSplat(splat);
         })
         demo.draw();

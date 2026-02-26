@@ -18,11 +18,14 @@ export default class GaussianSplat {
 
     splatbuffer?: ArrayBuffer
     bufferLength = 0
+
     static bufferStride = 4 * (4 + 4 + 16 + 4 * 16);
     static centerOffset = 0
     static opacityOffset = 4 * 4
     static sigma3dOffset = 4 * (4 + 4)
     static shcolorOffset = 4 * (4 + 4 + 16)
+
+    modelmtx: mat4 = mat4.create();
 
     webgpu: {
         scene?: Scene
@@ -87,7 +90,7 @@ export default class GaussianSplat {
         };
     }
 
-    static fromPLY(ply: PLYMeshData): GaussianSplat | null {
+    static fromPLY(ply: PLYMeshData, modelmtx: mat4 = mat4.create()): GaussianSplat | null {
 
         const count = ply.elements["vertex"].count;
         const bufferLength = GaussianSplat.bufferStride * count;
@@ -173,6 +176,8 @@ export default class GaussianSplat {
         splat.splatbuffer = splatBuffer;
         splat.bufferLength = bufferLength;
 
+        splat.modelmtx = modelmtx;
+
         return splat;
     }
 
@@ -208,7 +213,19 @@ export default class GaussianSplat {
         if (device == null) {
             return null;
         }
-        return null;
+        const view = makeStructuredView(this.getDefinition().uniforms.splatUniform);
+        if (this.webgpu.uniformBuffers.default == null) {
+            this.webgpu.uniformBuffers.default = device.createBuffer({
+                label: `${this.name} uniform`,
+                size: view.arrayBuffer.byteLength,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+            });
+        }
+        view.set({
+            modelmtx: this.modelmtx
+        })
+        device.queue.writeBuffer(this.webgpu.uniformBuffers.default, 0, view.arrayBuffer);
+        return this.webgpu.uniformBuffers;
     }
 
     getStorageBuffers() {
@@ -279,13 +296,11 @@ export default class GaussianSplat {
                             format: this.webgpu.context.canvas.context.getConfiguration().format,
                             blend: {
                                 color: {
-                                    // 目标颜色 = 当前片段颜色 * 当前Alpha + 缓冲颜色 * (1 - 当前Alpha)
-                                    srcFactor: 'src-alpha',
+                                    srcFactor: 'one', // 注意这里变成了 one
                                     dstFactor: 'one-minus-src-alpha',
                                     operation: 'add',
                                 },
                                 alpha: {
-                                    // 目标Alpha = 当前片段Alpha * 1 + 缓冲Alpha * (1 - 当前Alpha)
                                     srcFactor: 'one',
                                     dstFactor: 'one-minus-src-alpha',
                                     operation: 'add',
@@ -319,13 +334,6 @@ export default class GaussianSplat {
         if (this.webgpu.bindGroupLayouts.default == null) {
             this.webgpu.bindGroupLayouts.default = device.createBindGroupLayout({
                 entries: [
-                    // {
-                    //     binding: 0,
-                    //     visibility: GPUShaderStage.VERTEX,
-                    //     buffer: {
-                    //         type: 'uniform'
-                    //     }
-                    // },
                     {
                         binding: 0,
                         visibility: GPUShaderStage.VERTEX,
@@ -339,7 +347,14 @@ export default class GaussianSplat {
                         buffer: {
                             type: 'read-only-storage'
                         }
-                    }
+                    },
+                    {
+                        binding: 2,
+                        visibility: GPUShaderStage.VERTEX,
+                        buffer: {
+                            type: 'uniform'
+                        }
+                    },
                 ]
             });
         }
@@ -353,6 +368,7 @@ export default class GaussianSplat {
         }
         const bindgroupLayouts = this.getBindGroupLayouts();
         const storageBuffers = this.getStorageBuffers();
+        const uniforms = this.getUniformBuffers();
         if (this.webgpu.bindGroups.default == null) {
 
             this.webgpu.bindGroups.default = device.createBindGroup({
@@ -360,7 +376,8 @@ export default class GaussianSplat {
                 layout: bindgroupLayouts.default,
                 entries: [
                     { binding: 0, resource: { buffer: storageBuffers.default } },
-                    { binding: 1, resource: { buffer: storageBuffers.index } }
+                    { binding: 1, resource: { buffer: storageBuffers.index } },
+                    { binding: 2, resource: { buffer: uniforms.default } }
                 ]
             });
         }
@@ -385,7 +402,8 @@ export default class GaussianSplat {
         const viewmtx = this.webgpu.scene.camera.matrices.viewMtx;
 
         const viewdist = splats.map((p, i) => {
-            const vp = vec4.transformMat4(vec4.create(), p, viewmtx);
+            const vp = vec4.transformMat4(vec4.create(), p, this.modelmtx);
+            vec4.transformMat4(vp, vp, viewmtx);
             return [i, vp[2]];
         })
 
