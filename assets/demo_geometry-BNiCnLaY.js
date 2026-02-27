@@ -1,4 +1,4 @@
-import"./modulepreload-polyfill-B5Qt9EMX.js";import{m as S,a as g,b as z,g as b,n as C,s as x,h as u,i as v,j as M,k as w,l as A,c as U,r as G,o as T,C as _,e as D,P as F}from"./webgpu-utils.module-DYoVC6wh.js";import{v as y,S as V,A as E,r as a}from"./axis-DPoguJ6D.js";import{P as I,M as j}from"./plyformat-B5bX0Ewg.js";import{c as O,P as R,G as k,a as W,b as N}from"./objects-DCNIAmTT.js";import{g as q}from"./cactus_splat3_30kSteps_142k_splats-B6q0-v_z.js";import"./color-DsrcJaFb.js";var P=`override MAX_LIGHTS: u32 = 10u;
+import"./modulepreload-polyfill-B5Qt9EMX.js";import{m as S,a as g,b as z,g as b,n as C,s as x,h as u,i as v,j as M,k as w,l as A,c as U,r as G,o as T,C as _,e as D,P as F}from"./webgpu-utils.module-Cj-QWmJB.js";import{v as y,S as V,A as E,r as a}from"./axis-sWHJfhu1.js";import{P as I,M as j}from"./plyformat-JtMasdzv.js";import{c as O,P as R,G as k,a as W,b as N}from"./objects-BMBEF8J0.js";import{g as q}from"./cactus_splat3_30kSteps_142k_splats-B6q0-v_z.js";import"./color-DsrcJaFb.js";var P=`override MAX_LIGHTS: u32 = 10u;
 
 struct PointLight {\r
     position: vec3f,\r

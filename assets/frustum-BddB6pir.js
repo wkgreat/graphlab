@@ -1,4 +1,4 @@
-import{m as M,a as D,b as G,I as E,c as g,J as N,z as F,g as w,n as S,s as W,h as t,l as I,j as n,k as s}from"./webgpu-utils.module-DYoVC6wh.js";import{N as A}from"./objects-DCNIAmTT.js";import{C as l}from"./color-DsrcJaFb.js";const O=`\r
+import{m as M,a as D,b as G,I as E,c as g,J as N,z as F,g as w,n as S,s as W,h as t,l as I,j as n,k as s}from"./webgpu-utils.module-Cj-QWmJB.js";import{N as A}from"./objects-BMBEF8J0.js";import{C as l}from"./color-DsrcJaFb.js";const O=`\r
 struct SceneUniform {\r
     viewmtx: mat4x4f,\r
     projmtx: mat4x4f\r
