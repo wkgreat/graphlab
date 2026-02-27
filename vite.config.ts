@@ -44,5 +44,8 @@ export default defineConfig(({ command }) => ({
   plugins: [
     glsl(),
     react()
-  ]
+  ],
+  worker: {
+    plugins: () => [glsl()]
+  }
 }))
