@@ -1,98 +1,5 @@
 #include ./scene.wgsl
 
-fn computeJacobian(splatviewpos: vec3f) -> mat3x2f {
-    let x = splatviewpos.x;
-    let y = splatviewpos.y;
-    let z = min(-0.05, splatviewpos.z);
-    let z2 = z * z;
-    let height = scene.viewport.height;
-    let width = scene.viewport.width;
-    let fovy = scene.projection.fovy;
-    let aspect = scene.projection.aspect;
-    let fy = height / (2.0 * tan(fovy * 0.5));
-    let fx = fy; // 使用统一焦距
-    return mat3x2f(
-        vec2f(fx / z, 0.0),            
-        vec2f(0.0, fy / z),            
-        vec2f(-fx * x / z2, -fy * y / z2)
-    );
-}
-
-fn computeAABB(splatndspos: vec2f, m2d: mat2x2f) -> vec4f {
-    let u = splatndspos.x;
-    let v = splatndspos.y;
-    let sxx = max(m2d[0][0], 0.3);
-    let syy = max(m2d[1][1], 0.3);
-    let sxy = m2d[0][1];
-    let trace = sxx + syy;
-    let det = max(sxx * syy - sxy * sxy, 1e-6);
-    let lambda_max = 0.5 * (trace + sqrt(max(0.0, trace*trace - 4.0*det)));
-    let r = clamp(3.0 * sqrt(lambda_max), 1.0, 1024.0);
-    let xmin = u - r;
-    let xmax = u + r;
-    let ymin = v - r;
-    let ymax = v + r;
-    return vec4f(xmin,ymin,xmax,ymax);
-}
-
-// dview = cameraWorldPos - splatWorldPos
-fn sh_color(dview: vec3f, sh: array<vec4f,16>) -> vec3f {
-    let x = dview.x;
-    let y = dview.y;
-    let z = dview.z;
-
-    let x2 = x * x;
-    let y2 = y * y;
-    let z2 = z * z;
-    let xy = x * y;
-    let yz = y * z;
-    let xz = x * z;
-
-    // SH 常数定义
-    const SH_C0: f32 = 0.28209479177387814;
-    const SH_C1: f32 = 0.4886025119029199;
-    const SH_C2: array<f32, 5> = array<f32, 5>(
-        1.0925484305920792,
-        -1.0925484305920792,
-        0.31539156525252005,
-        -1.0925484305920792,
-        0.5462742152960396
-    );
-    const SH_C3: array<f32, 7> = array<f32, 7>(
-        -0.5900435899266435,
-        2.890611442640554,
-        -0.4570457994644658,
-        0.3731763325901154,
-        -0.4570457994644658,
-        1.445305721320277,
-        -0.5900435899266435
-    );
-
-    // Degree 0 (基础色)
-    var result = SH_C0 * sh[0].rgb;
-
-    // Degree 1
-    result += SH_C1 * (-y * sh[1].rgb + z * sh[2].rgb - x * sh[3].rgb);
-
-    // Degree 2
-    result += SH_C2[0] * xy * sh[4].rgb;
-    result += SH_C2[1] * yz * sh[5].rgb;
-    result += SH_C2[2] * (2.0 * z2 - x2 - y2) * sh[6].rgb;
-    result += SH_C2[3] * xz * sh[7].rgb;
-    result += SH_C2[4] * (x2 - y2) * sh[8].rgb;
-
-    // Degree 3
-    result += SH_C3[0] * y * (3.0 * x2 - y2) * sh[9].rgb;
-    result += SH_C3[1] * xy * z * sh[10].rgb;
-    result += SH_C3[2] * y * (4.0 * z2 - x2 - y2) * sh[11].rgb;
-    result += SH_C3[3] * z * (2.0 * z2 - 3.0 * x2 - 3.0 * y2) * sh[12].rgb;
-    result += SH_C3[4] * x * (4.0 * z2 - x2 - y2) * sh[13].rgb;
-    result += SH_C3[5] * z * (x2 - y2) * sh[14].rgb;
-    result += SH_C3[6] * x * (x2 - 3.0 * y2) * sh[15].rgb;
-
-    return max(result + 0.5, vec3<f32>(0.0)); 
-}
-
 struct VSInput {
     @builtin(vertex_index) vertidx: u32,
     @builtin(instance_index) instidx: u32
@@ -112,10 +19,11 @@ struct FSOutput {
 };
 
 struct SplatData {
-    @align(16) center: vec4f,
-    @align(16) opacity: vec4f, //f32 对齐至 vec4f
-    @align(16) sigma3d: mat4x4f, // mat3x3f 对齐至 mat4x4f
-    @align(16) shcolor: array<vec4f, 16>
+    @align(16) ndspos: vec4f,
+    @align(16) sigma2d: mat2x2f,
+    @align(16) color: vec4f,
+    @align(16) vertndspos: array<vec4f, 6>,
+    @align(16) vertndcpos: array<vec4f, 6>
 }
 
 struct SplatUniform {
@@ -126,76 +34,22 @@ struct SplatUniform {
 @group(1) @binding(1) var<storage, read> splatIndex: array<u32>;
 @group(1) @binding(2) var<uniform> splatUniform: SplatUniform;
 
-//TODO 每个splat instance的数据只计算一次
 @vertex fn vs(input: VSInput) -> VSOutput {
 
     let index = splatIndex[input.instidx];
     let splat = splatData[index];
-
-    let modelmtx4 = splatUniform.modelmtx;
-    let modelmtx3 = mat3x3f(
-        modelmtx4[0].xyz,
-        modelmtx4[1].xyz,
-        modelmtx4[2].xyz,
-    );
-
-    var splatworldpos = modelmtx4 * splat.center;
-    let splatviewpos = scene.camera.viewmtx * splatworldpos;
-    var splatndcpos = scene.projection.projmtx * splatviewpos;
-    splatndcpos = splatndcpos / splatndcpos.w;
-    var splatndspos = scene.viewport.viewportmtx * splatndcpos;
-    splatndspos = splatndspos / splatndspos.w;
-
-    let J = computeJacobian(splatviewpos.xyz);
-
-    var M3D = mat3x3f(
-        splat.sigma3d[0].xyz,
-        splat.sigma3d[1].xyz,
-        splat.sigma3d[2].xyz
-    );
-
-    M3D = modelmtx3 * M3D * transpose(modelmtx3);
-
-    let W = mat3x3f(
-        scene.camera.viewmtx[0].xyz,
-        scene.camera.viewmtx[1].xyz,
-        scene.camera.viewmtx[2].xyz
-    ); 
-
-    M3D = W * M3D * transpose(W);
-
-    var M2D: mat2x2f = J * (M3D * transpose(J));
-
-    let b = 0.5 * (M2D[0][1] + M2D[1][0]);
-    M2D[0][1] = b;
-    M2D[1][0] = b;
-    M2D[0][0] = max(0.3, M2D[0][0]);
-    M2D[1][1] = max(0.3, M2D[1][1]);
-
-    let aabb = computeAABB(splatndspos.xy, M2D);
-
-    let corners: array<vec4f, 6> = array(
-        vec4f(aabb[0],aabb[1],splatndspos.z,1),
-        vec4f(aabb[2],aabb[3],splatndspos.z,1),
-        vec4f(aabb[0],aabb[3],splatndspos.z,1),
-        vec4f(aabb[0],aabb[1],splatndspos.z,1),
-        vec4f(aabb[2],aabb[1],splatndspos.z,1),
-        vec4f(aabb[2],aabb[3],splatndspos.z,1)
-    );
-
-    let cornernds = corners[input.vertidx];
-    var cornerndc = scene.viewport.viewportmtxInv * cornernds;
-    cornerndc = cornerndc / cornerndc.w;
-
-    let dview = normalize(scene.camera.eye - splatworldpos.xyz);
-    let color = vec4f(sh_color(dview, splat.shcolor), splat.opacity.r);
+    let splatndspos = splat.ndspos;
+    let sigma2d = splat.sigma2d;
+    let cornernds = splat.vertndspos[input.vertidx];
+    let cornerndc = splat.vertndcpos[input.vertidx];
+    let color = splat.color;
 
     var output: VSOutput;
     output.position = cornerndc;
     output.ndspos = cornernds;
     output.centerndspos = splatndspos;
-    output.m2dr0 = M2D[0];
-    output.m2dr1 = M2D[1];
+    output.m2dr0 = sigma2d[0];
+    output.m2dr1 = sigma2d[1];
     output.color = color;
 
     return output;

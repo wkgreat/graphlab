@@ -2,8 +2,15 @@ import { mat3, mat4, quat, vec4 } from "gl-matrix";
 import { createBuffersAndAttributesFromArrays, makeShaderDataDefinitions, makeStructuredView, type BuffersAndAttributes, type ShaderDataDefinitions } from "webgpu-utils";
 import type PLYMeshData from "../format/ply/plyformat";
 import type Scene from "../scene";
+import computeShaderCode from "../shader/3dgscompute.wgsl";
 import shaderCode from "../shader/3dgs.wgsl";
 import type { WebGPUContext } from "../webgpuUtils";
+
+interface SplatComputeInfo {
+    dispatchSizeX: number,
+    workgroupSizeX: number,
+    numBatches: number
+}
 
 export default class GaussianSplat {
 
@@ -11,37 +18,76 @@ export default class GaussianSplat {
 
     splatCount: number = 0;
 
-    // 外包矩形顶点位置 //vertex
-    vertpos: Float32Array
-    // 椭球位置 // instance
-    splatpos?: Float32Array
+    vertpos: Float32Array // 外包矩形顶点
+
+    splatpos?: Float32Array // 椭球中心位置
 
     splatbuffer?: ArrayBuffer
     bufferLength = 0
+    index?: Uint32Array
 
-    static bufferStride = 4 * (4 + 4 + 16 + 4 * 16);
-    static centerOffset = 0
-    static opacityOffset = 4 * 4
-    static sigma3dOffset = 4 * (4 + 4)
-    static shcolorOffset = 4 * (4 + 4 + 16)
+    needCompute: boolean = true;
+    needSort: boolean = true;
 
     modelmtx: mat4 = mat4.create();
+
+    computeInfo: SplatComputeInfo | null = null;
+
+    static bufferInfo = {
+
+        computeInput: {
+            stride: 4 * (4 + 4 + 16 + 4 * 16),
+            offset: { // bytes
+                center: 0,
+                opacity: 4 * 4,
+                sigma3d: 4 * (4 + 4),
+                shcolor: 4 * (4 + 4 + 16)
+            },
+            length: { // number of elements
+                center: 4,
+                opacity: 4,
+                sigma3d: 16,
+                shcolor: 64
+            }
+        },
+
+        computeOutput: {
+            stride: 4 * (4 + 4 + 4 + 4 * 6 + 4 * 6),
+            offset: {
+                ndspos: 0,
+                sigma2d: 4 * 4,
+                color: 4 * (4 + 4),
+                vertndspos: 4 * (4 + 4 + 4),
+                vertndcpos: 4 * (4 + 4 + 4 + 4 * 6),
+            },
+            length: {
+                ndspos: 4,
+                sigma2d: 4,
+                color: 4,
+                vertndspos: 24,
+                vertndcpos: 24,
+            }
+        }
+    }
 
     webgpu: {
         scene?: Scene
         context?: WebGPUContext
-        definition?: ShaderDataDefinitions
+        definitions?: Record<string, ShaderDataDefinitions>
         vertexBuffers?: Record<string, BuffersAndAttributes>
         uniformBuffers?: Record<string, GPUBuffer>
         storageBuffers?: Record<string, GPUBuffer>
-        module?: GPUShaderModule
-        pipeline?: GPURenderPipeline
+        modules?: Record<string, GPUShaderModule>
+        pipelines?: Record<string, GPURenderPipeline | GPUComputePipeline>
         bindGroupLayouts?: Record<string, GPUBindGroupLayout>
         bindGroups?: Record<string, GPUBindGroup>
     } = {
+            definitions: {},
             vertexBuffers: {},
             uniformBuffers: {},
             storageBuffers: {},
+            modules: {},
+            pipelines: {},
             bindGroupLayouts: {},
             bindGroups: {}
         }
@@ -60,26 +106,26 @@ export default class GaussianSplat {
     static makeSplatStructuredView(buffer: ArrayBuffer, i: number) {
         const center = new Float32Array(
             buffer,
-            i * GaussianSplat.bufferStride + GaussianSplat.centerOffset,
-            4
+            i * GaussianSplat.bufferInfo.computeInput.stride + GaussianSplat.bufferInfo.computeInput.offset.center,
+            GaussianSplat.bufferInfo.computeInput.length.center
         );
 
         const opacity = new Float32Array(
             buffer,
-            i * GaussianSplat.bufferStride + GaussianSplat.opacityOffset,
-            4
+            i * GaussianSplat.bufferInfo.computeInput.stride + GaussianSplat.bufferInfo.computeInput.offset.opacity,
+            GaussianSplat.bufferInfo.computeInput.length.opacity
         );
 
         const sigma3d = new Float32Array(
             buffer,
-            i * GaussianSplat.bufferStride + GaussianSplat.sigma3dOffset,
-            16
+            i * GaussianSplat.bufferInfo.computeInput.stride + GaussianSplat.bufferInfo.computeInput.offset.sigma3d,
+            GaussianSplat.bufferInfo.computeInput.length.sigma3d
         );
 
         const shcolor = new Float32Array(
             buffer,
-            i * GaussianSplat.bufferStride + GaussianSplat.shcolorOffset,
-            64
+            i * GaussianSplat.bufferInfo.computeInput.stride + GaussianSplat.bufferInfo.computeInput.offset.shcolor,
+            GaussianSplat.bufferInfo.computeInput.length.shcolor
         );
 
         return {
@@ -93,7 +139,7 @@ export default class GaussianSplat {
     static fromPLY(ply: PLYMeshData, modelmtx: mat4 = mat4.create()): GaussianSplat | null {
 
         const count = ply.elements["vertex"].count;
-        const bufferLength = GaussianSplat.bufferStride * count;
+        const bufferLength = GaussianSplat.bufferInfo.computeInput.stride * count;
         const splatBuffer = new ArrayBuffer(bufferLength);
 
         const xData = ply.elements["vertex"].properties["x"].data;
@@ -184,13 +230,18 @@ export default class GaussianSplat {
     initWebGPU(context: WebGPUContext, scene: Scene) {
         this.webgpu.context = context;
         this.webgpu.scene = scene;
+
+        this.webgpu.scene.on("change", () => {
+            this.needCompute = true;
+            this.needSort = true;
+        })
     }
 
     getDefinition() {
-        if (this.webgpu.definition == null) {
-            this.webgpu.definition = makeShaderDataDefinitions(shaderCode);
+        if (this.webgpu.definitions.default == null) {
+            this.webgpu.definitions.default = makeShaderDataDefinitions(shaderCode);
         }
-        return this.webgpu.definition;
+        return this.webgpu.definitions;
     }
 
     getVertexBuffers() {
@@ -213,7 +264,7 @@ export default class GaussianSplat {
         if (device == null) {
             return null;
         }
-        const view = makeStructuredView(this.getDefinition().uniforms.splatUniform);
+        const view = makeStructuredView(this.getDefinition().default.uniforms.splatUniform);
         if (this.webgpu.uniformBuffers.default == null) {
             this.webgpu.uniformBuffers.default = device.createBuffer({
                 label: `${this.name} uniform`,
@@ -233,6 +284,25 @@ export default class GaussianSplat {
         if (device == null) {
             return null;
         }
+
+        if (this.webgpu.storageBuffers.computeInput == null) {
+            this.webgpu.storageBuffers.computeInput = device.createBuffer({
+                label: `${this.name} splatcolor storage computeInput buffer`,
+                size: this.bufferLength,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+            });
+            device.queue.writeBuffer(this.webgpu.storageBuffers.computeInput, 0, this.splatbuffer);
+        }
+
+        if (this.webgpu.storageBuffers.computeOutput == null) {
+            this.webgpu.storageBuffers.computeOutput = device.createBuffer({
+                label: `${this.name} splatcolor storage computeOuttput buffer`,
+                size: GaussianSplat.bufferInfo.computeOutput.stride * this.splatCount,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+            });
+            // 不需填入数据，由computeShader计算
+        }
+
         if (this.webgpu.storageBuffers.default == null) {
             this.webgpu.storageBuffers.default = device.createBuffer({
                 label: `${this.name} splatcolor storage buffer`,
@@ -257,7 +327,72 @@ export default class GaussianSplat {
         return this.webgpu.storageBuffers;
     }
 
-    getPipeline() {
+    #getDeviceComputeInfo(): SplatComputeInfo {
+
+        if (this.computeInfo == null) {
+            const maxDispacthSizeX = this.webgpu.context.adapter.limits.maxComputeWorkgroupsPerDimension;
+            const maxWorkgroupSizeX = this.webgpu.context.adapter.limits.maxComputeWorkgroupSizeX;
+            const workgroupSizeX = Math.min(128, maxWorkgroupSizeX);
+            const numWorkgroups = Math.ceil(this.splatCount / workgroupSizeX);
+            let numBatches = 1;
+            let dispatchSizeX = 0;
+            if (numWorkgroups <= maxDispacthSizeX) {
+                dispatchSizeX = numWorkgroups;
+                numBatches = 1;
+            } else {
+                dispatchSizeX = numWorkgroups;
+                numBatches = Math.ceil(numWorkgroups / maxDispacthSizeX);
+            }
+            this.computeInfo = {
+                dispatchSizeX,
+                workgroupSizeX,
+                numBatches
+            }
+            console.log(this.computeInfo);
+        }
+
+        return this.computeInfo;
+
+    }
+
+    #createComputePipeline() {
+
+        const device = this.webgpu.context.device;
+        if (device == null) {
+            return null;
+        }
+
+        if (this.webgpu.modules.compute == null) {
+            this.webgpu.modules.compute = device.createShaderModule({
+                label: `${this.name} compute module`,
+                code: computeShaderCode
+            });
+        }
+
+        const pipelineLayout = device.createPipelineLayout({
+            bindGroupLayouts: [
+                this.webgpu.scene.bindGroupLayout,
+                this.getBindGroupLayouts().compute
+            ]
+        });
+
+        if (this.webgpu.pipelines.compute == null) {
+            const computeInfo = this.#getDeviceComputeInfo();
+            this.webgpu.pipelines.compute = device.createComputePipeline({
+                label: `${this.name} compute pipeline`,
+                layout: pipelineLayout,
+                compute: {
+                    module: this.webgpu.modules.compute,
+                    constants: {
+                        workGroupSizeX: computeInfo.workgroupSizeX
+                    }
+                }
+            })
+        }
+    }
+
+    #createRenderPipeline() {
+
         const device = this.webgpu.context.device;
         if (device == null) {
             return null;
@@ -265,9 +400,9 @@ export default class GaussianSplat {
 
         const buffer = this.getVertexBuffers();
 
-        if (this.webgpu.module == null) {
-            this.webgpu.module = device.createShaderModule({
-                label: `${this.name} module`,
+        if (this.webgpu.modules.default == null) {
+            this.webgpu.modules.default = device.createShaderModule({
+                label: `${this.name} render module`,
                 code: shaderCode
             });
         }
@@ -279,18 +414,18 @@ export default class GaussianSplat {
             ]
         });
 
-        if (this.webgpu.pipeline == null) {
-            this.webgpu.pipeline = device.createRenderPipeline({
+        if (this.webgpu.pipelines.default == null) {
+            this.webgpu.pipelines.default = device.createRenderPipeline({
                 label: `${this.name} pipeline`,
                 layout: pipelineLayout,
                 vertex: {
-                    module: this.webgpu.module,
+                    module: this.webgpu.modules.default,
                     buffers: [
                         ...buffer.vertex.bufferLayouts
                     ]
                 },
                 fragment: {
-                    module: this.webgpu.module,
+                    module: this.webgpu.modules.default,
                     targets: [
                         {
                             format: this.webgpu.context.canvas.context.getConfiguration().format,
@@ -322,8 +457,15 @@ export default class GaussianSplat {
                 }
             });
         }
+    }
 
-        return this.webgpu.pipeline;
+    getPipelines() {
+
+        this.#createComputePipeline();
+
+        this.#createRenderPipeline();
+
+        return this.webgpu.pipelines;
     }
 
     getBindGroupLayouts() {
@@ -331,6 +473,35 @@ export default class GaussianSplat {
         if (device == null) {
             return null;
         }
+
+        if (this.webgpu.bindGroupLayouts.compute == null) {
+            this.webgpu.bindGroupLayouts.compute = device.createBindGroupLayout({
+                entries: [
+                    {
+                        binding: 0,
+                        visibility: GPUShaderStage.COMPUTE,
+                        buffer: {
+                            type: 'read-only-storage'
+                        }
+                    },
+                    {
+                        binding: 1,
+                        visibility: GPUShaderStage.COMPUTE,
+                        buffer: {
+                            type: 'storage'
+                        }
+                    },
+                    {
+                        binding: 2,
+                        visibility: GPUShaderStage.COMPUTE,
+                        buffer: {
+                            type: 'uniform'
+                        }
+                    }
+                ]
+            });
+        }
+
         if (this.webgpu.bindGroupLayouts.default == null) {
             this.webgpu.bindGroupLayouts.default = device.createBindGroupLayout({
                 entries: [
@@ -354,7 +525,8 @@ export default class GaussianSplat {
                         buffer: {
                             type: 'uniform'
                         }
-                    },
+                    }
+
                 ]
             });
         }
@@ -369,15 +541,31 @@ export default class GaussianSplat {
         const bindgroupLayouts = this.getBindGroupLayouts();
         const storageBuffers = this.getStorageBuffers();
         const uniforms = this.getUniformBuffers();
+
+        //compute
+        if (this.webgpu.bindGroups.compute == null) {
+            this.webgpu.bindGroups.compute = device.createBindGroup({
+                label: `${this.name} compute bindgroup`,
+                layout: bindgroupLayouts.compute,
+                entries: [
+                    { binding: 0, resource: { buffer: storageBuffers.computeInput } },
+                    { binding: 1, resource: { buffer: storageBuffers.computeOutput } },
+                    { binding: 2, resource: { buffer: uniforms.default } }
+                ]
+            });
+        }
+
+        //render
         if (this.webgpu.bindGroups.default == null) {
 
             this.webgpu.bindGroups.default = device.createBindGroup({
                 label: `${this.name} bindgroup`,
                 layout: bindgroupLayouts.default,
                 entries: [
-                    { binding: 0, resource: { buffer: storageBuffers.default } },
+                    { binding: 0, resource: { buffer: storageBuffers.computeOutput } },
                     { binding: 1, resource: { buffer: storageBuffers.index } },
-                    { binding: 2, resource: { buffer: uniforms.default } }
+                    { binding: 2, resource: { buffer: uniforms.default } },
+                    // { binding: 3, resource: { buffer: storageBuffers.computeOutput } }
                 ]
             });
         }
@@ -388,28 +576,54 @@ export default class GaussianSplat {
     sortSplat() {
         //TODO compute shader 排序
 
-        const splats = [];
+        if (this.index == null || this.needSort) {
+            const splats = [];
 
-        for (let i = 0; i < this.splatCount; ++i) {
-            splats.push(vec4.fromValues(
-                this.splatpos[i * 4],
-                this.splatpos[i * 4 + 1],
-                this.splatpos[i * 4 + 2],
-                1
-            ));
+            for (let i = 0; i < this.splatCount; ++i) {
+                splats.push(vec4.fromValues(
+                    this.splatpos[i * 4],
+                    this.splatpos[i * 4 + 1],
+                    this.splatpos[i * 4 + 2],
+                    1
+                ));
+            }
+
+            const viewmtx = this.webgpu.scene.camera.matrices.viewMtx;
+
+            const viewdist = splats.map((p, i) => {
+                const vp = vec4.transformMat4(vec4.create(), p, this.modelmtx);
+                vec4.transformMat4(vp, vp, viewmtx);
+                return [i, vp[2]];
+            })
+
+            const index = viewdist.sort((a, b) => a[1] - b[1]).map(t => t[0]);
+
+            this.index = new Uint32Array(index);
+
+            this.needSort = false;
         }
 
-        const viewmtx = this.webgpu.scene.camera.matrices.viewMtx;
+        return this.index;
 
-        const viewdist = splats.map((p, i) => {
-            const vp = vec4.transformMat4(vec4.create(), p, this.modelmtx);
-            vec4.transformMat4(vp, vp, viewmtx);
-            return [i, vp[2]];
-        })
+    }
 
-        const index = viewdist.sort((a, b) => a[1] - b[1]).map(t => t[0]);
+    compute(pass: GPUComputePassEncoder) {
+        const device = this.webgpu.context.device;
+        if (device == null) {
+            return null;
+        }
 
-        return new Uint32Array(index);
+        if (this.needCompute) {
+            const pipeline = this.getPipelines().compute;
+            const bindgroup = this.getBindGroups().compute;
+            const computeInfo = this.#getDeviceComputeInfo();
+
+            pass.setPipeline(pipeline as GPUComputePipeline);
+            pass.setBindGroup(0, this.webgpu.scene.bindGroup);
+            pass.setBindGroup(1, bindgroup);
+            pass.dispatchWorkgroups(computeInfo.dispatchSizeX);
+            this.needCompute = false;
+        }
 
     }
 
@@ -422,10 +636,10 @@ export default class GaussianSplat {
 
         const vertexBuffers = this.getVertexBuffers();
 
-        const pipeline = this.getPipeline();
+        const pipelines = this.getPipelines();
         const bindGroup = this.getBindGroups().default;
 
-        pass.setPipeline(pipeline);
+        pass.setPipeline(pipelines.default as GPURenderPipeline);
         pass.setBindGroup(0, this.webgpu.scene.bindGroup);
         pass.setBindGroup(1, bindGroup);
         pass.setVertexBuffer(0, vertexBuffers.vertex.buffers[0]);
@@ -433,6 +647,26 @@ export default class GaussianSplat {
 
     }
 
-    destroy() {}
+    destroy() {
+        for (const verterBuffer of Object.values(this.webgpu.vertexBuffers)) {
+            for (const buffer of verterBuffer.buffers) {
+                buffer.destroy();
+            }
+            if (verterBuffer.indexBuffer) {
+                verterBuffer.indexBuffer.destroy();
+            }
+        }
+        this.webgpu.vertexBuffers = {};
+
+        for (const storageBuffer of Object.values(this.webgpu.storageBuffers)) {
+            storageBuffer.destroy();
+        }
+        this.webgpu.storageBuffers = {};
+
+        for (const uniformBuffer of Object.values(this.webgpu.uniformBuffers)) {
+            uniformBuffer.destroy();
+        }
+
+    }
 
 }

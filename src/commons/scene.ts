@@ -10,6 +10,8 @@ import type Projection from "./projection";
 import sceneCode from "./shader/scene.wgsl";
 import { bool2num, type WebGPUContext } from "./webgpuUtils";
 
+export type SceneChangeCallback = (scene: Scene) => void;
+
 export default class Scene {
 
     camera: Camera;
@@ -33,17 +35,42 @@ export default class Scene {
         default2DSampler?: GPUSampler
     } = {};
 
+    #callbacks: Record<string, SceneChangeCallback[]> = {};
+
+    on(event: string, f: SceneChangeCallback) {
+        if (!(event in this.#callbacks)) {
+            this.#callbacks[event] = [];
+        }
+        this.#callbacks[event].push(f);
+    }
+
+    fire(event: string) {
+        if (event in this.#callbacks) {
+            for (const f of this.#callbacks[event]) {
+                f(this);
+            }
+        }
+    }
+
     constructor(camera: Camera, projection: Projection) {
         this.camera = camera;
+        this.camera.on("change", () => {
+            this.fire("change");
+        })
         this.projection = projection;
+        this.projection.on("change", () => {
+            this.fire("change");
+        })
     }
 
     setWorldMatrix(matrix: mat4) {
         this.worldmtx = matrix;
+        this.fire("change");
     }
 
     addLight(light: PointLight) {
         this.lights.push(light);
+        this.fire("change");
     }
 
     setIBL(ibl: IBL) {
@@ -51,6 +78,7 @@ export default class Scene {
         if (this.#webgpu.context != null && ibl.webgpu.context == null) {
             ibl.initWebGPU(this.#webgpu.context, this);
         }
+        this.fire("change");
     }
 
     canEnv() {
@@ -72,6 +100,7 @@ export default class Scene {
     refreshViewport(width: number, height: number) {
         this.#width = width;
         this.#height = height;
+        this.fire("change");
     }
 
     get viewportMatrix() {
@@ -203,7 +232,7 @@ export default class Scene {
                     entries: [
                         {
                             binding: 0,
-                            visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                            visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE,
                             buffer: {
                                 type: 'uniform'
                             }

@@ -1,5 +1,7 @@
 import { vec3, vec4, mat4 } from "gl-matrix";
 
+export type CameraChangeCallback = (camera: Camera) => void;
+
 class Camera {
 
     #from = vec4.fromValues(1, 1, 1, 1);
@@ -8,6 +10,23 @@ class Camera {
     #viewMtx = mat4.create();
     #invViewMtx = mat4.create();
 
+    #callbacks: Record<string, CameraChangeCallback[]> = {};
+
+    on(event: string, f: CameraChangeCallback) {
+        if (!(event in this.#callbacks)) {
+            this.#callbacks[event] = [];
+        }
+        this.#callbacks[event].push(f);
+    }
+
+    fire(event: string) {
+        if (event in this.#callbacks) {
+            for (const f of this.#callbacks[event]) {
+                f(this);
+            }
+        }
+    }
+
     constructor(from: vec4, to: vec4, up: vec4) {
         this.setFrom(from);
         this.setTo(to);
@@ -15,16 +34,19 @@ class Camera {
     }
 
     setFrom(vin: vec3 | vec4) {
-        this.setVector4(this.#from, vin);
+        this.#setVector4(this.#from, vin);
         this._look();
+        this.fire("change");
     }
     setTo(vin: vec3 | vec4) {
-        this.setVector4(this.#to, vin);
+        this.#setVector4(this.#to, vin);
         this._look();
+        this.fire("change");
     }
     setUp(vin: vec3 | vec4) {
-        this.setVector4(this.#up, vin);
+        this.#setVector4(this.#up, vin);
         this._look();
+        this.fire("change");
     }
 
     get from() {
@@ -39,7 +61,7 @@ class Camera {
         return this.#up;
     }
 
-    setVector4(vout: vec4, vin: vec3 | vec4) {
+    #setVector4(vout: vec4, vin: vec3 | vec4) {
         const len = vin.length;
         if (len < 3) {
             console.log("len < 3");
@@ -98,6 +120,7 @@ class Camera {
         vec4.transformMat4(this.#from, viewFrom4, this.#invViewMtx);
 
         this._look();
+        this.fire("change");
     }
 
     /**
@@ -110,6 +133,7 @@ class Camera {
         vec4.multiply(d, d, [f, f, f, f]);
         vec4.add(this.#from, this.#from, d);
         this._look();
+        this.fire("change");
     }
 
     /**
@@ -131,6 +155,7 @@ class Camera {
         vec4.transformMat4(this.#to, viewTo4, this.#invViewMtx);
 
         this._look();
+        this.fire("change");
 
     }
 

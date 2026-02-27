@@ -1,11 +1,30 @@
 import { mat4 } from "gl-matrix";
 
+export type ProjectionChangeCallback = (projection: Projection) => void;
+
 class Projection {
 
     #fovy: number = Math.PI / 3;
     #aspect: number = 1;
     #near: number = 0.1;
     #far: number = 1E10;
+
+    #callbacks: Record<string, ProjectionChangeCallback[]> = {};
+
+    on(event: string, f: ProjectionChangeCallback) {
+        if (!(event in this.#callbacks)) {
+            this.#callbacks[event] = [];
+        }
+        this.#callbacks[event].push(f);
+    }
+
+    fire(event: string) {
+        if (event in this.#callbacks) {
+            for (const f of this.#callbacks[event]) {
+                f(this);
+            }
+        }
+    }
 
     constructor(fovy: number, aspect: number, near: number, far: number) {
         this.#fovy = fovy;
@@ -46,6 +65,7 @@ class Projection {
     set aspect(aspect: number) {
         if (this.#aspect !== aspect) {
             this.#aspect = aspect;
+            this.fire("change");
         }
     }
 

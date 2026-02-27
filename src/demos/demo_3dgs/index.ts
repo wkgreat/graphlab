@@ -10,6 +10,7 @@ import { logger } from '../../commons/logger';
 import Scene from '../../commons/scene';
 import Axis from '../../commons/mesh/axis';
 import { mat4 } from 'gl-matrix';
+import { FPS } from '../../commons/perf';
 
 class GaussianSplatDemo {
 
@@ -41,7 +42,11 @@ class GaussianSplatDemo {
 
     pane: Pane;
 
-    paneParams = {}
+    paneParams = {
+        fps: 0
+    }
+
+    fps: FPS = new FPS();
 
     constructor() {
 
@@ -166,25 +171,30 @@ class GaussianSplatDemo {
         if (this.ready) {
 
             const encoder = this.context.device.createCommandEncoder();
-            this.firstpass = true;
-            const pass = encoder.beginRenderPass(this.getRenderPassDescriptor());
-            this.firstpass = false;
 
-            if (this.axis) {
-                this.axis.draw(pass);
-            }
-
+            const computePass = encoder.beginComputePass();
             if (this.gaussianSplat) {
-                this.gaussianSplat.draw(pass);
+                this.gaussianSplat.compute(computePass);
             }
+            computePass.end();
 
-            pass.end();
+            this.firstpass = true;
+            const renderPass = encoder.beginRenderPass(this.getRenderPassDescriptor());
+            this.firstpass = false;
+            if (this.axis) {
+                this.axis.draw(renderPass);
+            }
+            if (this.gaussianSplat) {
+                this.gaussianSplat.draw(renderPass);
+            }
+            renderPass.end();
 
             const commandBuffer = encoder.finish();
 
             this.context.device.queue.submit([commandBuffer]);
         }
 
+        this.fps.refresh();
         requestAnimationFrame(this.render.bind(this));
     }
 
@@ -195,7 +205,15 @@ class GaussianSplatDemo {
     }
 
     setPane() {
-
+        this.fps.addCallback((fps) => {
+            this.paneParams.fps = fps;
+        });
+        this.pane.addBinding(this.paneParams, "fps", {
+            view: "graph",
+            readonly: true,
+            min: 0,
+            max: 120
+        })
     }
 
 }
