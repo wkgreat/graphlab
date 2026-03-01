@@ -192,6 +192,10 @@ class GaussianSplatDemo {
             const commandBuffer = encoder.finish();
 
             this.context.device.queue.submit([commandBuffer]);
+
+            // if (this.gaussianSplat) {
+            //     this.gaussianSplat.checkStorage();
+            // }
         }
 
         this.fps.refresh();

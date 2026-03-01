@@ -2,6 +2,8 @@ import { mat3, mat4, quat, vec4 } from "gl-matrix";
 import { createBuffersAndAttributesFromArrays, makeShaderDataDefinitions, makeStructuredView, type BuffersAndAttributes, type ShaderDataDefinitions } from "webgpu-utils";
 import type PLYMeshData from "../format/ply/plyformat";
 import type Scene from "../scene";
+import indexInitShaderCode from "../shader/3dgsinitindex.wgsl";
+import sortShaderCode from "../shader/3dgssort.wgsl";
 import computeShaderCode from "../shader/3dgscompute.wgsl";
 import shaderCode from "../shader/3dgs.wgsl";
 import type { WebGPUContext } from "../webgpuUtils";
@@ -10,6 +12,15 @@ interface SplatComputeInfo {
     dispatchSizeX: number,
     workgroupSizeX: number,
     numBatches: number
+}
+
+interface SplatSortComputeInfo extends SplatComputeInfo {
+    length: number
+    byteLength: number
+    statgeCount: number,
+    stageBuffer: ArrayBuffer,
+    stageBufferByteStride: number,
+    stageBufferByteLength: number
 }
 
 export default class GaussianSplat {
@@ -24,14 +35,19 @@ export default class GaussianSplat {
 
     splatbuffer?: ArrayBuffer
     bufferLength = 0
+
     index?: Uint32Array
 
     needCompute: boolean = true;
+
     needSort: boolean = true;
+
+    indexInited: boolean = false;
 
     modelmtx: mat4 = mat4.create();
 
-    computeInfo: SplatComputeInfo | null = null;
+    computeInfo?: SplatComputeInfo;
+    sortInfo?: SplatSortComputeInfo;
 
     static bufferInfo = {
 
@@ -241,6 +257,9 @@ export default class GaussianSplat {
         if (this.webgpu.definitions.default == null) {
             this.webgpu.definitions.default = makeShaderDataDefinitions(shaderCode);
         }
+        if (this.webgpu.definitions.sort == null) {
+            this.webgpu.definitions.sort = makeShaderDataDefinitions(sortShaderCode);
+        }
         return this.webgpu.definitions;
     }
 
@@ -264,18 +283,29 @@ export default class GaussianSplat {
         if (device == null) {
             return null;
         }
-        const view = makeStructuredView(this.getDefinition().default.uniforms.splatUniform);
         if (this.webgpu.uniformBuffers.default == null) {
+            const view = makeStructuredView(this.getDefinition().default.uniforms.splatUniform);
             this.webgpu.uniformBuffers.default = device.createBuffer({
                 label: `${this.name} uniform`,
                 size: view.arrayBuffer.byteLength,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
             });
+            view.set({
+                modelmtx: this.modelmtx
+            })
+            device.queue.writeBuffer(this.webgpu.uniformBuffers.default, 0, view.arrayBuffer);
         }
-        view.set({
-            modelmtx: this.modelmtx
-        })
-        device.queue.writeBuffer(this.webgpu.uniformBuffers.default, 0, view.arrayBuffer);
+
+        if (this.webgpu.uniformBuffers.sort == null) {
+            const sortInfo = this.getSortComputeInfo();
+            this.webgpu.uniformBuffers.sort = device.createBuffer({
+                label: `${this.name} uniform`,
+                size: sortInfo.stageBufferByteLength,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+            });
+            device.queue.writeBuffer(this.webgpu.uniformBuffers.sort, 0, sortInfo.stageBuffer, 0, sortInfo.stageBufferByteLength);
+        }
+
         return this.webgpu.uniformBuffers;
     }
 
@@ -312,47 +342,116 @@ export default class GaussianSplat {
             device.queue.writeBuffer(this.webgpu.storageBuffers.default, 0, this.splatbuffer);
         }
 
-        const indexData = this.sortSplat();
+        const sortInfo = this.getSortComputeInfo();
 
         if (this.webgpu.storageBuffers.index == null) {
             this.webgpu.storageBuffers.index = device.createBuffer({
                 label: `${this.name} index storage buffer`,
-                size: indexData.byteLength,
+                size: sortInfo.byteLength,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
             });
         }
-        //dynamic
-        device.queue.writeBuffer(this.webgpu.storageBuffers.index, 0, indexData.buffer);
 
         return this.webgpu.storageBuffers;
+    }
+
+    #getDeviceComputeInfo1D(nTask: number, maxWorkgroupSizeX: number = 128): SplatComputeInfo {
+        const maxDispacthSizeX = this.webgpu.context.adapter.limits.maxComputeWorkgroupsPerDimension;
+        const workgroupSizeX = Math.min(maxWorkgroupSizeX, this.webgpu.context.adapter.limits.maxComputeWorkgroupSizeX);
+        const numWorkgroups = Math.ceil(nTask / workgroupSizeX);
+        let numBatches = 1;
+        let dispatchSizeX = 0;
+        if (numWorkgroups <= maxDispacthSizeX) {
+            dispatchSizeX = numWorkgroups;
+            numBatches = 1;
+        } else {
+            dispatchSizeX = numWorkgroups;
+            numBatches = Math.ceil(numWorkgroups / maxDispacthSizeX);
+        }
+        return {
+            dispatchSizeX,
+            workgroupSizeX,
+            numBatches
+        }
     }
 
     #getDeviceComputeInfo(): SplatComputeInfo {
 
         if (this.computeInfo == null) {
-            const maxDispacthSizeX = this.webgpu.context.adapter.limits.maxComputeWorkgroupsPerDimension;
-            const maxWorkgroupSizeX = this.webgpu.context.adapter.limits.maxComputeWorkgroupSizeX;
-            const workgroupSizeX = Math.min(128, maxWorkgroupSizeX);
-            const numWorkgroups = Math.ceil(this.splatCount / workgroupSizeX);
-            let numBatches = 1;
-            let dispatchSizeX = 0;
-            if (numWorkgroups <= maxDispacthSizeX) {
-                dispatchSizeX = numWorkgroups;
-                numBatches = 1;
-            } else {
-                dispatchSizeX = numWorkgroups;
-                numBatches = Math.ceil(numWorkgroups / maxDispacthSizeX);
-            }
-            this.computeInfo = {
-                dispatchSizeX,
-                workgroupSizeX,
-                numBatches
-            }
-            console.log(this.computeInfo);
+
+            this.computeInfo = this.#getDeviceComputeInfo1D(this.splatCount);
         }
 
         return this.computeInfo;
 
+    }
+
+    #createIndexInitPipeline() {
+        const device = this.webgpu.context.device;
+        if (device == null) {
+            return null;
+        }
+
+        if (this.webgpu.modules.indexInit == null) {
+            this.webgpu.modules.indexInit = device.createShaderModule({
+                label: `${this.name} compute index init module`,
+                code: indexInitShaderCode
+            });
+        }
+
+        const pipelineLayout = device.createPipelineLayout({
+            bindGroupLayouts: [
+                this.getBindGroupLayouts().indexInit
+            ]
+        });
+
+        if (this.webgpu.pipelines.indexInit == null) {
+            const sortInfo = this.getSortComputeInfo();
+            this.webgpu.pipelines.indexInit = device.createComputePipeline({
+                label: `${this.name} compute index init pipeline`,
+                layout: pipelineLayout,
+                compute: {
+                    module: this.webgpu.modules.indexInit,
+                    constants: {
+                        workGroupSizeX: sortInfo.workgroupSizeX
+                    }
+                }
+            })
+        }
+    }
+
+    #createSortPipeline() {
+        const device = this.webgpu.context.device;
+        if (device == null) {
+            return null;
+        }
+
+        if (this.webgpu.modules.sort == null) {
+            this.webgpu.modules.sort = device.createShaderModule({
+                label: `${this.name} compute sort module`,
+                code: sortShaderCode
+            });
+        }
+
+        const pipelineLayout = device.createPipelineLayout({
+            bindGroupLayouts: [
+                this.getBindGroupLayouts().sort
+            ]
+        });
+
+        if (this.webgpu.pipelines.sort == null) {
+            const sortInfo = this.getSortComputeInfo();
+            this.webgpu.pipelines.sort = device.createComputePipeline({
+                label: `${this.name} compute sort pipeline`,
+                layout: pipelineLayout,
+                compute: {
+                    module: this.webgpu.modules.sort,
+                    constants: {
+                        workGroupSizeX: sortInfo.workgroupSizeX
+                    }
+                }
+            })
+        }
     }
 
     #createComputePipeline() {
@@ -461,7 +560,11 @@ export default class GaussianSplat {
 
     getPipelines() {
 
+        this.#createIndexInitPipeline();
+
         this.#createComputePipeline();
+
+        this.#createSortPipeline();
 
         this.#createRenderPipeline();
 
@@ -472,6 +575,49 @@ export default class GaussianSplat {
         const device = this.webgpu.context.device;
         if (device == null) {
             return null;
+        }
+
+        if (this.webgpu.bindGroupLayouts.indexInit == null) {
+            this.webgpu.bindGroupLayouts.indexInit = device.createBindGroupLayout({
+                entries: [
+                    {
+                        binding: 0,
+                        visibility: GPUShaderStage.COMPUTE,
+                        buffer: {
+                            type: 'storage'
+                        }
+                    },
+                ]
+            });
+        }
+
+        if (this.webgpu.bindGroupLayouts.sort == null) {
+            this.webgpu.bindGroupLayouts.sort = device.createBindGroupLayout({
+                entries: [
+                    {
+                        binding: 0,
+                        visibility: GPUShaderStage.COMPUTE,
+                        buffer: {
+                            type: 'uniform',
+                            hasDynamicOffset: true
+                        },
+                    },
+                    {
+                        binding: 1,
+                        visibility: GPUShaderStage.COMPUTE,
+                        buffer: {
+                            type: 'read-only-storage'
+                        }
+                    },
+                    {
+                        binding: 2,
+                        visibility: GPUShaderStage.COMPUTE,
+                        buffer: {
+                            type: 'storage'
+                        }
+                    },
+                ]
+            });
         }
 
         if (this.webgpu.bindGroupLayouts.compute == null) {
@@ -542,6 +688,33 @@ export default class GaussianSplat {
         const storageBuffers = this.getStorageBuffers();
         const uniforms = this.getUniformBuffers();
 
+        //indexInit
+        if (this.webgpu.bindGroups.indexInit == null) {
+            this.webgpu.bindGroups.indexInit = device.createBindGroup({
+                label: `${this.name} compute indexInit bindgroup`,
+                layout: bindgroupLayouts.indexInit,
+                entries: [
+                    { binding: 0, resource: { buffer: storageBuffers.index } }
+                ]
+            });
+        }
+
+        //sort
+        if (this.webgpu.bindGroups.sort == null) {
+
+            const sortInfo = this.getSortComputeInfo();
+
+            this.webgpu.bindGroups.sort = device.createBindGroup({
+                label: `${this.name} compute sort bindgroup`,
+                layout: bindgroupLayouts.sort,
+                entries: [
+                    { binding: 0, resource: { buffer: uniforms.sort, size: sortInfo.stageBufferByteStride } },
+                    { binding: 1, resource: { buffer: storageBuffers.computeOutput } },
+                    { binding: 2, resource: { buffer: storageBuffers.index } }
+                ]
+            });
+        }
+
         //compute
         if (this.webgpu.bindGroups.compute == null) {
             this.webgpu.bindGroups.compute = device.createBindGroup({
@@ -564,8 +737,7 @@ export default class GaussianSplat {
                 entries: [
                     { binding: 0, resource: { buffer: storageBuffers.computeOutput } },
                     { binding: 1, resource: { buffer: storageBuffers.index } },
-                    { binding: 2, resource: { buffer: uniforms.default } },
-                    // { binding: 3, resource: { buffer: storageBuffers.computeOutput } }
+                    { binding: 2, resource: { buffer: uniforms.default } }
                 ]
             });
         }
@@ -573,33 +745,115 @@ export default class GaussianSplat {
         return this.webgpu.bindGroups;
     }
 
-    sortSplat() {
-        //TODO compute shader 排序
+    initIndexGPU(pass: GPUComputePassEncoder) {
 
-        if (this.index == null || this.needSort) {
-            const splats = [];
+        if (!this.indexInited) {
+            const device = this.webgpu.context.device;
+            if (device == null) {
+                return null;
+            }
+            const pipeline = this.getPipelines().indexInit;
+            const bindgroup = this.getBindGroups().indexInit;
+            const computeInfo = this.getSortComputeInfo();
 
-            for (let i = 0; i < this.splatCount; ++i) {
-                splats.push(vec4.fromValues(
-                    this.splatpos[i * 4],
-                    this.splatpos[i * 4 + 1],
-                    this.splatpos[i * 4 + 2],
-                    1
-                ));
+            pass.setPipeline(pipeline as GPUComputePipeline);
+            pass.setBindGroup(0, bindgroup);
+            pass.dispatchWorkgroups(computeInfo.dispatchSizeX);
+            this.indexInited = true;
+        }
+
+    }
+
+    sortSplatCPU() {
+        const splats = [];
+
+        for (let i = 0; i < this.splatCount; ++i) {
+            splats.push(vec4.fromValues(
+                this.splatpos[i * 4],
+                this.splatpos[i * 4 + 1],
+                this.splatpos[i * 4 + 2],
+                1
+            ));
+        }
+
+        const viewmtx = this.webgpu.scene.camera.matrices.viewMtx;
+
+        const viewdist = splats.map((p, i) => {
+            const vp = vec4.transformMat4(vec4.create(), p, this.modelmtx);
+            vec4.transformMat4(vp, vp, viewmtx);
+            return [i, vp[2]];
+        })
+
+        return new Uint32Array(viewdist.sort((a, b) => a[1] - b[1]).map(t => t[0]));
+    }
+
+    getSortComputeInfo(): SplatSortComputeInfo {
+        if (this.sortInfo == null) {
+            const n = Math.pow(2, Math.ceil(Math.log2(this.splatCount)));
+            const byteStride = 256; // 256对齐
+            const byteLength = byteStride * n
+            const computeInfo = this.#getDeviceComputeInfo1D(n);
+
+            let nStages = 0;
+            let cursor = 0;
+
+            const buffer = new ArrayBuffer(byteLength);
+            const u32view = new Uint32Array(buffer);
+            for (let k = 2; k <= n; k <<= 1) {
+                for (let j = k >> 1; j > 0; j >>= 1) {
+                    u32view[cursor++] = k;
+                    u32view[cursor++] = j;
+                    u32view[cursor++] = n;
+                    cursor += (byteStride / 4 - 3); // 256对齐
+                    nStages++;
+                }
             }
 
-            const viewmtx = this.webgpu.scene.camera.matrices.viewMtx;
+            this.sortInfo = {
+                ...computeInfo,
+                length: n,
+                byteLength: 4 * n,
+                statgeCount: nStages,
+                stageBuffer: buffer,
+                stageBufferByteStride: 256,
+                stageBufferByteLength: 256 * nStages
+            }
+        }
+        return this.sortInfo;
+    }
 
-            const viewdist = splats.map((p, i) => {
-                const vp = vec4.transformMat4(vec4.create(), p, this.modelmtx);
-                vec4.transformMat4(vp, vp, viewmtx);
-                return [i, vp[2]];
-            })
+    sortSplatGPU(pass: GPUComputePassEncoder) {
+        const device = this.webgpu.context.device;
+        if (device == null) {
+            return null;
+        }
 
-            const index = viewdist.sort((a, b) => a[1] - b[1]).map(t => t[0]);
+        if (this.needSort) {
 
-            this.index = new Uint32Array(index);
+            const pipeline = this.getPipelines().sort;
+            const bindgroup = this.getBindGroups().sort;
+            const sortInfo = this.getSortComputeInfo();
 
+            pass.setPipeline(pipeline as GPUComputePipeline);
+
+            for (let i = 0; i < sortInfo.statgeCount; ++i) {
+                pass.setBindGroup(0, bindgroup, [i * sortInfo.stageBufferByteStride]);
+                pass.dispatchWorkgroups(sortInfo.dispatchSizeX);
+            }
+
+            this.needSort = false;
+        }
+    }
+
+    sortSplat() {
+        const device = this.webgpu.context.device;
+        if (device == null) {
+            return null;
+        }
+        if (this.index == null || this.needSort) {
+            this.index = this.sortSplatCPU();
+            const buffer = this.getStorageBuffers().index;
+            device.queue.writeBuffer(buffer, 0, this.index.buffer);
             this.needSort = false;
         }
 
@@ -622,8 +876,12 @@ export default class GaussianSplat {
             pass.setBindGroup(0, this.webgpu.scene.bindGroup);
             pass.setBindGroup(1, bindgroup);
             pass.dispatchWorkgroups(computeInfo.dispatchSizeX);
+
             this.needCompute = false;
         }
+
+        this.initIndexGPU(pass);
+        this.sortSplatGPU(pass);
 
     }
 
@@ -666,6 +924,8 @@ export default class GaussianSplat {
         for (const uniformBuffer of Object.values(this.webgpu.uniformBuffers)) {
             uniformBuffer.destroy();
         }
+
+        this.webgpu.uniformBuffers = {};
 
     }
 

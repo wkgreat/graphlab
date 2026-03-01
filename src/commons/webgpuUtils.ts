@@ -37,7 +37,7 @@ export async function createWebGPUContext(canvas?: HTMLCanvasElement, features?:
         adapter,
         device
     }
-    if (canvas !== null) {
+    if (canvas != null) {
         context.canvas = {};
         context.canvas.element = canvas;
         const canvasCtx = canvas.getContext('webgpu') as GPUCanvasContext | null;

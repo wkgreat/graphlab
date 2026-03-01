@@ -179,15 +179,6 @@ fn splatCompute(
         vec4f(aabb[2],aabb[3],splatndspos.z,1)
     );
 
-    // let vertndspos: array<vec4f, 6> = array(
-    //     vec4f(0,0,splatndspos.z,1),
-    //     vec4f(200,200,splatndspos.z,1),
-    //     vec4f(0,200,splatndspos.z,1),
-    //     vec4f(0,0,splatndspos.z,1),
-    //     vec4f(200,0,splatndspos.z,1),
-    //     vec4f(200,200,splatndspos.z,1)
-    // );
-
     var vertndcpos: array<vec4f, 6>;
     vertndcpos[0] = scene.viewport.viewportmtxInv * vertndspos[0];
     vertndcpos[1] = scene.viewport.viewportmtxInv * vertndspos[1];

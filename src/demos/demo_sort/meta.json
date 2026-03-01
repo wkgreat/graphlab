@@ -1,0 +1,8 @@
+{
+    "external": false,
+    "url": "",
+    "hidden": true,
+    "html": "index.html",
+    "name": "GPU排序",
+    "description": "使用WebGPU的计算着色器进行数组排序(Bitonic算法)"
+}
