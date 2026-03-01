@@ -1,7 +1,6 @@
 export const IBLPorgressHook = (p: number, msg: string) => {
     const progressDiv = document.getElementById("progress-wraper");
     const span = document.getElementById("progress-text");
-    console.log(progressDiv);
     if (progressDiv == null) {
         return;
     }
