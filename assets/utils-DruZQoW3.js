@@ -1,0 +1,1 @@
+function e(n){return Object.keys(n).length}function o(n,t,r){return Math.min(Math.max(n,t),r)}function u(n,t="Value must not be null or undefined"){if(n==null)throw new Error(t)}function a(n,t){return Math.random()*(t-n)+n}export{u as a,o as c,e as o,a as r};
