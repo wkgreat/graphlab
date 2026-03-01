@@ -23,3 +23,32 @@ body {
     height: 100%;
     width: 100%;
 }
+
+#progress-wrapper {
+    position: absolute;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 0;
+    top: 0px;
+}
+
+#progress {
+    z-index: 1;
+    background-color: #feffff70;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+}
+
+#progress-icon-div svg {
+    stroke: white;
+    fill: white;
+}
+
+#progress-text-div {
+    color: white;
+}
+
+#progress {}

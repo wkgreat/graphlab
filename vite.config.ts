@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import glsl from 'vite-plugin-glsl'
 import react from '@vitejs/plugin-react'
+import svgr from "vite-plugin-svgr";
 import { resolve } from 'path';
 import path from 'path'
 import fs from 'fs'
@@ -43,7 +44,8 @@ export default defineConfig(({ command }) => ({
   },
   plugins: [
     glsl(),
-    react()
+    react(),
+    svgr()
   ],
   worker: {
     plugins: () => [glsl()]

@@ -12,12 +12,9 @@ import { Pane } from 'tweakpane';
 import EnvironmentMap from '../../commons/envmap';
 import GLTF from '../../commons/format/gltf/gltf';
 import GLTFRender from '../../commons/format/gltf/gltfrender';
-
 import IBL from '../../commons/ibl';
-import Logger from '../../commons/logger';
 import iblURL from '/data/ibl/modern_evening_stree/ibl.json?url';
-
-export const logger = new Logger();
+import { IBLPorgressHook } from './progress';
 
 export class GLTFDemo {
 
@@ -116,7 +113,7 @@ export class GLTFDemo {
             this.scene.refreshViewport(width, height);
 
             // IBL
-            IBL.loadFromURI(iblURL).then(ibl => {
+            IBL.loadFromURI(iblURL, IBLPorgressHook).then(ibl => {
                 ibl.initWebGPU(this.context, this.scene);
                 this.scene.setIBL(ibl);
             })

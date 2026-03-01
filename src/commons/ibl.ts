@@ -3,7 +3,7 @@ import EnvironmentMap from "./envmap";
 import type Scene from "./scene";
 import { createCubeTextureFromKTX2, createTexture2DFromKTX2 } from "./texture";
 import type { CanvasGPUInfo, GPUInfo, WebGPUContext } from "./webgpuUtils";
-import { logger } from "../demos/demo_gltf/demo";
+import { logger } from "./logger";
 
 export default class IBL {
 
@@ -35,11 +35,16 @@ export default class IBL {
 
     private constructor() {}
 
-    static async loadFromURI(uri: string) {
+    static async loadFromURI(uri: string, progressHook: (p: number, s: string) => void = () => {}) {
+
+        progressHook(0, "IBL start loading...");
+        logger.info("IBL start loading...");
 
         const url = uri.replace(/\/[^\/]*$/, '/');
         const res = await fetch(uri);
         const json = await res.json();
+
+        progressHook(10, "IBL Fetch Meta Finish");
 
         const ibl = new IBL();
         ibl.url = url;
@@ -49,6 +54,7 @@ export default class IBL {
         ibl.name = name ?? "ibl";
 
         const envFile = json["environment"];
+
         if (envFile != null) {
             const envURI = `${url}/${envFile}`;
             ibl.environmentURI = envURI;
@@ -56,6 +62,7 @@ export default class IBL {
             ibl.environment = await EnvironmentMap.fromKtx(ibl.name, envURI);
             logger.info("IBL enviroment data finish");
         }
+        progressHook(40, "IBL Fetch Environment Data Finish");
 
         const prefilterFile = json["prefilter"];
         if (prefilterFile != null) {
@@ -69,6 +76,8 @@ export default class IBL {
             ibl.prefilterKTX = pfktx;
         }
 
+        progressHook(70, "IBL Fetch Prefilter Data Finish");
+
         const lutFile = json["lut"];
         if (lutFile != null) {
             const lutURI = `${url}/${lutFile}`;
@@ -81,11 +90,17 @@ export default class IBL {
             ibl.lutKTX = lutktx;
         }
 
+        progressHook(90, "IBL Fetch LUT Data Finish");
+
         const sh = json["sphericalHarmonics"];
         if (sh != null) {
             ibl.sh.prescale = sh.prescale;
             ibl.sh.parameters = sh.parameters;
         }
+
+        logger.info("IBL start finish");
+
+        progressHook(100, "IBL Loading Finish");
 
         return ibl;
 

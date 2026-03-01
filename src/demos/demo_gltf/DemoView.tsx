@@ -2,9 +2,8 @@ import { Box } from "@radix-ui/themes";
 import type { FC } from "react";
 import React, { useEffect } from "react";
 import GLTF, { type GLTFRef } from "../../commons/format/gltf/gltf";
-import { GLTFDemo, logger } from "./demo";
+import { GLTFDemo } from "./demo";
 import GLTFTreeView from "./GLTFTreeView";
-
 import { mat4 } from "gl-matrix";
 import { Pane } from "tweakpane";
 import CarConceptGLTFURL from '/data/mesh/gltf/CarConcept/CarConcept.gltf?url';
@@ -16,6 +15,10 @@ import modern_evening_stree_url from '/data/ibl/modern_evening_stree/ibl.json?ur
 import ferndale_studio_04_url from '/data/ibl/ferndale_studio_04/ibl.json?url';
 import IBL from "../../commons/ibl";
 import LogMonitor from "../../components/LogMonotor";
+import "./view.css"
+import LoadingIcon from "./blocks-wave.svg?react";
+import { logger } from "../../commons/logger";
+import { IBLPorgressHook } from "./progress";
 
 interface GLTFSource {
     name: string
@@ -89,7 +92,7 @@ const DemoView: FC<DemoViewProps> = (props) => {
     const paneRef = React.useRef<Pane>(null);
     const paneDataRef = React.useRef<object>(null);
 
-    logger.setHandler((log: string) => {
+    logger.addHandler((log: string) => {
         setLog(log);
     })
 
@@ -135,7 +138,7 @@ const DemoView: FC<DemoViewProps> = (props) => {
                 options: iblOptions
             }).on("change", (e) => {
                 const source = IBLSources[e.value];
-                IBL.loadFromURI(source.uri).then(ibl => {
+                IBL.loadFromURI(source.uri, IBLPorgressHook).then(ibl => {
                     const oldIBL = demoRef.current.scene.ibl;
                     demoRef.current.scene.setIBL(ibl);
                     oldIBL.destroy();
@@ -211,6 +214,26 @@ const DemoView: FC<DemoViewProps> = (props) => {
                 height: '100%',
                 overflow: 'hidden' /* 裁剪任何溢出内容 */
             }}>
+                <div id="progress-wraper" className="progress-wraper" style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    marginTop: "0"
+                }}>
+                    <div id="progress" className="progress" style={{
+                        zIndex: 1,
+                        background: "#28292Ee0",
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        gap: "10px"
+
+                    }}>
+                        <div><LoadingIcon></LoadingIcon></div>
+                        <div><span id="progress-text">loading</span></div>
+                    </div>
+                </div>
+
                 <canvas id="webgpu-canvas" className="demo-webgpu-canvas" style={{
                     position: 'absolute', /* 使用绝对定位强制铺满容器 */
                     top: 0,
@@ -220,7 +243,7 @@ const DemoView: FC<DemoViewProps> = (props) => {
                     display: 'block',
                     touchAction: 'none' /* WebGPU/WebGL 交互建议设置 */
                 }}></canvas>
-            </Box>
+            </Box >
         </div >
     );
 }

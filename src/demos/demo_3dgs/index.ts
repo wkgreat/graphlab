@@ -11,6 +11,7 @@ import Scene from '../../commons/scene';
 import Axis from '../../commons/mesh/axis';
 import { mat4 } from 'gl-matrix';
 import { FPS } from '../../commons/perf';
+import { plyPorgressHook } from './progress';
 
 class GaussianSplatDemo {
 
@@ -230,9 +231,11 @@ function main() {
         logger.info("GaussianSplatDemo ready");
         const modelmtx = mat4.rotateX(mat4.create(), mat4.create(), Math.PI);
         // const modelmtx = mat4.create();
+        plyPorgressHook(0, "loading 3dgs data...");
         PLYLoader.loadByWorker(plyuri, (ply) => {
             const splat = GaussianSplat.fromPLY(ply, modelmtx);
             demo.setGaussianSplat(splat);
+            plyPorgressHook(100, "3dgs data load finish");
         })
         demo.draw();
     });

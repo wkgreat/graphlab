@@ -12,39 +12,47 @@ export type LoggerHandler = (log: string, level: LoggerLevel) => void;
 
 export default class Logger {
 
-    handler: LoggerHandler;
+    handlers: LoggerHandler[] = [];
     level: number = LoggerLevel.WARN.level;
 
     constructor(handler: LoggerHandler = () => {}) {
-        this.handler = handler;
+        this.handlers.push(handler);
     }
 
     debug(log: string) {
         if (LoggerLevel.DEBUG.level >= this.level) {
-            this.handler(`[${LoggerLevel.DEBUG.token}] ${log}`, LoggerLevel.DEBUG);
+            this.handlers.forEach(handler => {
+                handler(`[${LoggerLevel.DEBUG.token}] ${log}`, LoggerLevel.DEBUG);
+            })
         }
     }
 
     info(log: string) {
         if (LoggerLevel.INFO.level >= this.level) {
-            this.handler(`[${LoggerLevel.INFO.token}] ${log}`, LoggerLevel.INFO);
+            this.handlers.forEach(handler => {
+                handler(`[${LoggerLevel.INFO.token}] ${log}`, LoggerLevel.INFO);
+            })
         }
     }
 
     warn(log: string) {
         if (LoggerLevel.WARN.level >= this.level) {
-            this.handler(`[${LoggerLevel.WARN.token}] ${log}`, LoggerLevel.WARN);
+            this.handlers.forEach(handler => {
+                handler(`[${LoggerLevel.WARN.token}] ${log}`, LoggerLevel.WARN)
+            });
         }
     }
 
     error(log: string) {
         if (LoggerLevel.ERROR.level >= this.level) {
-            this.handler(`[${LoggerLevel.ERROR.token}] ${log}`, LoggerLevel.ERROR);
+            this.handlers.forEach(handler => {
+                handler(`[${LoggerLevel.ERROR.token}] ${log}`, LoggerLevel.ERROR)
+            });
         }
     }
 
-    setHandler(handler: LoggerHandler) {
-        this.handler = handler;
+    addHandler(handler: LoggerHandler) {
+        this.handlers.push(handler);
     }
 
     setLevel(level: number | LoggerLevel) {
@@ -59,7 +67,7 @@ export default class Logger {
 
 const logger = new Logger();
 
-logger.setHandler((msg, level) => {
+logger.addHandler((msg, level) => {
     if (level === LoggerLevel.DEBUG || level === LoggerLevel.INFO) {
         console.log(msg);
     } else if (level === LoggerLevel.WARN) {
