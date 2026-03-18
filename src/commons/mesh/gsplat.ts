@@ -225,9 +225,9 @@ export default class GaussianSplat {
             shcolorView[1] = ply.elements["vertex"].properties["f_dc_1"].data[i];
             shcolorView[2] = ply.elements["vertex"].properties["f_dc_2"].data[i];
             for (let c = 0; c < 15; c++) {
-                shcolorView[4 + c * 4] = ply.elements["vertex"].properties[`f_rest_${c}`].data[i];
-                shcolorView[4 + c * 4 + 1] = ply.elements["vertex"].properties[`f_rest_${c + 15}`].data[i];
-                shcolorView[4 + c * 4 + 2] = ply.elements["vertex"].properties[`f_rest_${c + 30}`].data[i];
+                shcolorView[4 + c * 4] = ply.elements["vertex"].properties[`f_rest_${c}`]?.data[i] ?? 0;
+                shcolorView[4 + c * 4 + 1] = ply.elements["vertex"].properties[`f_rest_${c + 15}`]?.data[i] ?? 0;
+                shcolorView[4 + c * 4 + 2] = ply.elements["vertex"].properties[`f_rest_${c + 30}`]?.data[i] ?? 0;
             }
         }
 

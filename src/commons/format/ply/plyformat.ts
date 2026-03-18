@@ -441,9 +441,19 @@ export class PLYLoader {
     static async load(uri: string) {
 
         logger.info(`ply load start ${uri}`);
+        let response: Response;
+        let arrayBuffer: ArrayBuffer;
 
-        const response = await fetch(uri);
-        const arrayBuffer = await response.arrayBuffer();
+        try {
+            response = await fetch(uri, { mode: 'cors' });
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`ply load failed: HTTP ${response.status}: ${errorText}`);
+            }
+            arrayBuffer = await response.arrayBuffer();
+        } catch (err) {
+            console.error("ply load failed:", err.message);
+        }
 
         const ply = new PLYMeshData();
 
